@@ -5,22 +5,22 @@ local UserInputService = game:GetService("UserInputService")
 local ESPEnabled = true
 
 local function createESP(player)
-	if player == LocalPlayer then return end -- skip yourself
+	if player == LocalPlayer then return end 
 	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-	if player.Character:FindFirstChild("ESP") then return end -- don't duplicate
+	if player.Character:FindFirstChild("ESP") then return end 
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "ESP"
 	billboard.Adornee = player.Character.HumanoidRootPart
 	billboard.Size = UDim2.new(3, 0, 5, 0)
 	billboard.AlwaysOnTop = true
-	billboard.StudsOffset = Vector3.new(0, 3, 0)
-	billboard.Parent = player.Character -- local only
+	billboard.StudsOffset = Vector3.new(0, 0, 0)
+	billboard.Parent = player.Character 
 
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(1, 0, 1, 0)
 	frame.BackgroundColor3 = Color3.fromRGB(128, 0, 128)
-	frame.BackgroundTransparency = 0.5
+	frame.BackgroundTransparency = 0.25
 	frame.BorderSizePixel = 0
 	frame.Parent = billboard
 end
