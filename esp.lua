@@ -14,7 +14,7 @@ local function createESP(player)
 	billboard.Adornee = player.Character.HumanoidRootPart
 	billboard.Size = UDim2.new(3, 0, 5, 0)
 	billboard.AlwaysOnTop = true
-	billboard.StudsOffset = Vector3.new(0, 0, 0)
+	billboard.StudsOffset = Vector3.new(0, 0, 0) --update
 	billboard.Parent = player.Character 
 
 	local frame = Instance.new("Frame")
