@@ -23,11 +23,14 @@ local function createESP(player)
 	frame.BackgroundTransparency = 0.25
 	frame.BorderSizePixel = 0
 	frame.Parent = billboard
+
+	player.Character.Humanoid.WalkSpeed = 22
 end
 
 local function removeESP(player)
 	if player.Character and player.Character:FindFirstChild("ESP") then
 		player.Character.ESP:Destroy()
+		player.Character.Humanoid.WalkSpeed = 20
 	end
 end
 
