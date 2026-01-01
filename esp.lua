@@ -24,7 +24,7 @@ local function createESP(player)
 	frame.BorderSizePixel = 0
 	frame.Parent = billboard
 
-	player.Character.Humanoid.WalkSpeed = 22
+	player.Character.Humanoid.WalkSpeed = 23
 end
 
 local function removeESP(player)
