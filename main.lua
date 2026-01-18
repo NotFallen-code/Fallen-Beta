@@ -2,10 +2,6 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-if LocalPlayer.Name ~= "itztrixzy1" then
-	return
-end
-
 -- SERVICES
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
