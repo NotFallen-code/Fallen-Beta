@@ -1,96 +1,147 @@
--- WHITELIST
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
--- SERVICES
 local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
--- SETTINGS
-local ENABLED = true
-local ESP_NAME = "MetalESP"
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
 
--- CLEANUP
-local function removeESP()
-	for _, v in ipairs(workspace:GetDescendants()) do
-		if v:IsA("BillboardGui") and v.Name == ESP_NAME then
-			v:Destroy()
-		end
+local enabled = false
+local tracked = {}
+
+local TARGET_NAMES = {
+	["CritStar"] = true,
+	["VitalityStar"] = true
+}
+
+local function getPart(obj)
+	if obj:IsA("BasePart") then
+		return obj
 	end
+	return obj:FindFirstChildWhichIsA("BasePart")
 end
 
--- CREATE ESP
-local function createESP(model)
-	if not ENABLED then return end
-	if not model:IsA("Model") then return end
-	if model:FindFirstChild(ESP_NAME) then return end
-	if not model:FindFirstChild("hidden-metal-prompt") then return end
-
-	local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+-- create esp
+local function createESP(obj)
+	if tracked[obj] then return end
+	
+	local part = getPart(obj)
 	if not part then return end
-
-	local gui = Instance.new("BillboardGui")
-	gui.Name = ESP_NAME
-	gui.Adornee = part
-	gui.Size = UDim2.fromOffset(120, 40)
-	gui.AlwaysOnTop = true
-	gui.MaxDistance = 100000
-	gui.Parent = model
-
-	local frame = Instance.new("Frame")
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	frame.BackgroundTransparency = 0.3
-	frame.BorderSizePixel = 2
-	frame.Parent = gui
-
+	
+	local highlight = Instance.new("Highlight")
+	highlight.FillColor = Color3.new(0,0,0)
+	highlight.FillTransparency = 0.5
+	highlight.OutlineTransparency = 1
+	highlight.Adornee = obj
+	highlight.Parent = obj
+	
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.new(0,100,0,40)
+	billboard.StudsOffset = Vector3.new(0,2,0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = part
+	
 	local text = Instance.new("TextLabel")
-	text.Size = UDim2.fromScale(1, 1)
+	text.Size = UDim2.new(1,0,1,0)
 	text.BackgroundTransparency = 1
-	text.TextColor3 = Color3.fromRGB(255, 255, 255)
+	text.TextColor3 = Color3.new(1,1,1)
+	text.TextStrokeTransparency = 0
 	text.TextScaled = true
-	text.Font = Enum.Font.GothamBold
-	text.Text = "METAL"
-	text.Parent = frame
-
-	RunService.RenderStepped:Connect(function()
-		if not part
-			or not LocalPlayer.Character
-			or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-			return
-		end
-
-		local dist = (LocalPlayer.Character.HumanoidRootPart.Position - part.Position).Magnitude
-		text.Text = "METAL\n" .. math.floor(dist) .. " studs"
-	end)
+	text.Font = Enum.Font.SourceSansBold
+	text.Parent = billboard
+	
+	tracked[obj] = {
+		highlight = highlight,
+		gui = billboard,
+		text = text,
+		part = part
+	}
 end
 
--- REFRESH
-local function refreshESP()
-	if not ENABLED then return end
-	for _, v in ipairs(workspace:GetDescendants()) do
-		createESP(v)
+local function removeESP(obj)
+	if not tracked[obj] then return end
+	
+	local data = tracked[obj]
+	if data.highlight then data.highlight:Destroy() end
+	if data.gui then data.gui:Destroy() end
+	
+	tracked[obj] = nil
+end
+
+local function clearAll()
+	for obj in pairs(tracked) do
+		removeESP(obj)
 	end
 end
 
--- AUTO UPDATE
-workspace.DescendantAdded:Connect(function(obj)
-	task.wait()
-	createESP(obj)
+-- update distance
+RunService.RenderStepped:Connect(function()
+	if not enabled then return end
+	
+	character = player.Character
+	if not character then return end
+	
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	
+	for obj, data in pairs(tracked) do
+		if obj and obj.Parent and data.part then
+			local dist = (root.Position - data.part.Position).Magnitude
+			data.text.Text = math.floor(dist).." studs"
+		else
+			removeESP(obj)
+		end
+	end
 end)
 
--- INITIAL
-refreshESP()
+-- scan
+local function scan()
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if TARGET_NAMES[obj.Name] then
+			createESP(obj)
+		end
+	end
+end
 
--- TOGGLE (RIGHT SHIFT)
-UIS.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
+-- new objects
+workspace.DescendantAdded:Connect(function(obj)
+	if not enabled then return end
+	
+	if TARGET_NAMES[obj.Name] then
+		task.spawn(function()
+			local attempts = 0
+			local part = getPart(obj)
+			
+			while not part and attempts < 20 do
+				task.wait(0.1)
+				part = getPart(obj)
+				attempts += 1
+			end
+			
+			if part then
+				createESP(obj)
+			end
+		end)
+	end
+end)
+
+workspace.DescendantRemoving:Connect(function(obj)
+	if TARGET_NAMES[obj.Name] then
+		removeESP(obj)
+	end
+end)
+
+-- toggle
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	
 	if input.KeyCode == Enum.KeyCode.RightShift then
-		ENABLED = not ENABLED
-		if ENABLED then
-			refreshESP()
+		enabled = not enabled
+		print("ESP:", enabled) -- debug
+		
+		if enabled then
+			scan()
 		else
-			removeESP()
+			clearAll()
 		end
 	end
 end)
