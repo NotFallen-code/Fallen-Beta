@@ -10,15 +10,14 @@ local toggles = {
 	["Bee"] = false,
 	["Metal"] = false,
 	["Star"] = false,
-	["Player"] = false,
-	["Box"] = false -- New Box ESP Toggle
+	["Box"] = false -- New Toggle
 }
 local connections = {}
 
 -- UI Setup
 local fallenWareScreenUI = Instance.new("ScreenGui")
 fallenWareScreenUI.Parent = playerGUI
-fallenWareScreenUI.Name = "ZENWARE"
+fallenWareScreenUI.Name = "FallenWare"
 fallenWareScreenUI.IgnoreGuiInset = true
 fallenWareScreenUI.ResetOnSpawn = false 
 
@@ -28,10 +27,10 @@ local function addUICorner(quantity, parent)
 	UICorner.Parent = parent
 end
 
--- Main Frame
+-- Main Frame (Slightly taller to fit the new button)
 local mainUI = Instance.new("Frame")
 mainUI.Parent = fallenWareScreenUI
-mainUI.Size = UDim2.new(0.13, 0, 0.55, 0) -- Increased Y size for new button
+mainUI.Size = UDim2.new(0.13, 0, 0.55, 0) 
 mainUI.Position = UDim2.new(0.15, 0, 0.15, 0)
 mainUI.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 mainUI.BorderSizePixel = 0
@@ -51,7 +50,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Parent = titleFrame
 titleText.Size = UDim2.new(1, 0, 1, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "GOATWARE"
+titleText.Text = "FALLENWARE"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.TextScaled = true
 titleText.Font = Enum.Font.Code
@@ -70,7 +69,7 @@ scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scrollingFrame.ZIndex = 5
 
 local uiList = Instance.new("UIListLayout", scrollingFrame)
-uiList.Padding = UDim.new(0, 8)
+uiList.Padding = UDim.new(0, 10)
 uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local uiPadding = Instance.new("UIPadding", scrollingFrame)
@@ -111,111 +110,98 @@ local function getESPConfig(obj)
 	return nil
 end
 
-local function removeESP(id)
-	if tracked[id] then
-		if tracked[id].gui then tracked[id].gui:Destroy() end
-		if tracked[id].box then tracked[id].box:Destroy() end
-		tracked[id] = nil
+local function removeESP(obj)
+	if tracked[obj] then
+		if tracked[obj].gui then tracked[obj].gui:Destroy() end
+		if tracked[obj].box then tracked[obj].box:Destroy() end
+		tracked[obj] = nil
 	end
 end
 
 local function createESP(obj, isPlayer)
-	local id = isPlayer and obj.UserId or obj
-	if tracked[id] then removeESP(id) end
-
-	local color, labelName
-	local targetPart
-
-	if isPlayer then
-		if obj == localPlayer then return end
-		color = Color3.new(1, 1, 1)
-		labelName = obj.DisplayName
-		targetPart = obj.Character and obj.Character:FindFirstChild("HumanoidRootPart")
-	else
-		color, labelName = getESPConfig(obj)
-		targetPart = obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-	end
-
+	if tracked[obj] then return end
+	
+	local targetPart = obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
 	if not targetPart then return end
 
-	local data = {name = labelName, part = targetPart, isPlayer = isPlayer, playerObj = isPlayer and obj or nil}
+	local color, labelName
+	if isPlayer then
+		color = Color3.fromHSV(tick() % 5 / 5, 1, 1) -- Initial Rainbow
+		labelName = obj.Name
+	else
+		color, labelName = getESPConfig(obj)
+	end
+	
+	if not color and not isPlayer then return end
 
-	-- Text ESP Logic
-	if (isPlayer and toggles["Player"]) or (not isPlayer) then
-		local bill = Instance.new("BillboardGui")
-		bill.Size = UDim2.fromOffset(150, 50)
+	local box = Instance.new("SelectionBox")
+	box.Adornee = targetPart
+	box.Color3 = color
+	box.LineThickness = 0.04
+	box.Transparency = 0.5
+	box.Parent = targetPart
+
+	local bill, label
+	if not isPlayer then -- Only show text/distance for items, not Box ESP players (as requested)
+		bill = Instance.new("BillboardGui")
+		bill.Size = UDim2.fromOffset(120, 50)
 		bill.AlwaysOnTop = true
 		bill.StudsOffset = Vector3.new(0, 3, 0)
 		bill.Adornee = targetPart
 		bill.Parent = targetPart
 		
-		local label = Instance.new("TextLabel", bill)
+		label = Instance.new("TextLabel", bill)
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1
 		label.TextColor3 = color
 		label.TextStrokeTransparency = 0
-		label.TextSize = 14
+		label.TextSize = 16
 		label.Font = Enum.Font.GothamBold
-		data.gui = bill
-		data.text = label
 	end
-
-	-- Box ESP Logic (Only for players)
-	if isPlayer and toggles["Box"] then
-		local box = Instance.new("SelectionBox")
-		box.Adornee = targetPart
-		box.Color3 = Color3.new(0, 0, 0) -- All Black
-		box.LineThickness = 0.05
-		box.SurfaceTransparency = 1
-		box.Parent = targetPart
-		data.box = box
-	end
-
-	tracked[id] = data
+	
+	tracked[obj] = {gui = bill, text = label, part = targetPart, box = box, name = labelName, isPlayer = isPlayer}
 end
 
 -- HEARTBEAT
 table.insert(connections, RunService.Heartbeat:Connect(function()
 	local char = localPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	
-	for id, data in pairs(tracked) do
-		-- Re-find character if player died
-		if data.isPlayer then
-			local pChar = data.playerObj.Character
-			local pHrp = pChar and pChar:FindFirstChild("HumanoidRootPart")
-			
-			if pHrp and data.part ~= pHrp then
-				createESP(data.playerObj, true) -- Refresh on respawn
-			elseif pHrp and hrp then
-				local dist = math.floor((hrp.Position - pHrp.Position).Magnitude)
-				if data.text then data.text.Text = data.name .. "\n[" .. dist .. "m]" end
+	local rainbow = Color3.fromHSV(tick() % 5 / 5, 1, 1)
+
+	for obj, data in pairs(tracked) do
+		if obj and obj.Parent and data.part then
+			if data.isPlayer then
+				data.box.Color3 = rainbow
+			else
+				local dist = math.floor((hrp.Position - data.part.Position).Magnitude)
+				data.text.Text = data.name .. "\n[" .. dist .. "m]"
 			end
 		else
-			-- World Objects
-			if data.part and data.part.Parent and hrp then
-				local dist = math.floor((hrp.Position - data.part.Position).Magnitude)
-				if data.text then data.text.Text = data.name .. "\n[" .. dist .. "m]" end
-			else
-				removeESP(id)
-			end
+			removeESP(obj)
 		end
 	end
 end))
 
-local function refreshCategory(cat)
-	if cat == "Player" or cat == "Box" then
-		for _, p in pairs(Players:GetPlayers()) do
-			if toggles["Player"] or toggles["Box"] then createESP(p, true) else removeESP(p.UserId) end
-		end
-	else
-		if toggles[cat] then
-			for _, v in pairs(workspace:GetDescendants()) do
-				if getESPConfig(v) and getESPConfig(v):find(cat) then createESP(v, false) end
+local function refreshCategory(cat, state)
+	if cat == "Box" then
+		if state then
+			for _, p in pairs(Players:GetPlayers()) do
+				if p ~= localPlayer and p.Character then createESP(p.Character, true) end
 			end
 		else
-			for id, data in pairs(tracked) do
-				if not data.isPlayer and data.name:find(cat) then removeESP(id) end
+			for obj, data in pairs(tracked) do
+				if data.isPlayer then removeESP(obj) end
+			end
+		end
+	else
+		if state then
+			for _, v in pairs(workspace:GetDescendants()) do
+				local _, typeName = getESPConfig(v)
+				if typeName and typeName:find(cat) then createESP(v, false) end
+			end
+		else
+			for obj, data in pairs(tracked) do
+				if not data.isPlayer and data.name:find(cat) then removeESP(obj) end
 			end
 		end
 	end
@@ -224,26 +210,25 @@ end
 --- BUTTONS ---
 local function makeBtn(text, parent)
 	local b = Instance.new("TextButton", parent)
-	b.Size = UDim2.new(0.9, 0, 0, 40)
+	b.Size = UDim2.new(0.9, 0, 0, 45)
 	b.Text = text
 	b.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 	b.TextColor3 = Color3.new(1, 1, 1)
 	b.Font = Enum.Font.Gotham
-	b.TextSize = 12
+	b.TextSize = 14
 	b.ZIndex = 6
 	addUICorner(6, b)
 	return b
 end
 
-local cats = {"Bee", "Metal", "Star", "Player", "Box"}
+local cats = {"Bee", "Metal", "Star", "Box"}
 for _, name in pairs(cats) do
-	local btnText = name == "Box" and "BOX ESP [OFF]" or name:upper() .. " ESP [OFF]"
-	local btn = makeBtn(btnText, scrollingFrame)
+	local btn = makeBtn(name:upper() .. " ESP [OFF]", scrollingFrame)
 	btn.Activated:Connect(function()
 		toggles[name] = not toggles[name]
-		btn.Text = (name == "Box" and "BOX ESP " or name:upper() .. " ESP ") .. (toggles[name] and "[ON]" or "[OFF]")
+		btn.Text = name:upper() .. " ESP " .. (toggles[name] and "[ON]" or "[OFF]")
 		btn.BackgroundColor3 = toggles[name] and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(60, 60, 60)
-		refreshCategory(name)
+		refreshCategory(name, toggles[name])
 	end)
 end
 
@@ -255,20 +240,30 @@ uninjectBtn.BackgroundColor3 = Color3.fromRGB(130, 40, 40)
 uninjectBtn.ZIndex = 11
 uninjectBtn.Activated:Connect(function()
 	for _, conn in pairs(connections) do conn:Disconnect() end
-	for id in pairs(tracked) do removeESP(id) end
+	for obj in pairs(tracked) do removeESP(obj) end
 	fallenWareScreenUI:Destroy()
 end)
 
--- Live listeners
+-- Player Respawn Logic
 table.insert(connections, Players.PlayerAdded:Connect(function(p)
-	p.CharacterAdded:Connect(function() task.wait(1) if toggles["Player"] or toggles["Box"] then createESP(p, true) end end)
+	p.CharacterAdded:Connect(function(c)
+		if toggles["Box"] then task.wait(0.5) createESP(c, true) end
+	end)
 end))
 
+for _, p in pairs(Players:GetPlayers()) do
+	p.CharacterAdded:Connect(function(c)
+		if toggles["Box"] then task.wait(0.5) createESP(c, true) end
+	end)
+end
+
+-- Listener for live spawns
 table.insert(connections, workspace.DescendantAdded:Connect(function(obj)
 	task.wait(0.5)
-	if getESPConfig(obj) then
+	local _, typeName = getESPConfig(obj)
+	if typeName then
 		for cat, active in pairs(toggles) do
-			if active and cat ~= "Player" and cat ~= "Box" then createESP(obj, false) end
+			if active and typeName:find(cat) then createESP(obj, false) end
 		end
 	end
 end))
