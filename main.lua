@@ -13,11 +13,12 @@ local toggles = {
 	["Box"] = false 
 }
 local connections = {}
+local guiVisible = true
 
 -- UI Setup
 local fallenWareScreenUI = Instance.new("ScreenGui")
 fallenWareScreenUI.Parent = playerGUI
-fallenWareScreenUI.Name = "UZIWARE + ZENWARE"
+fallenWareScreenUI.Name = "FallenWare"
 fallenWareScreenUI.IgnoreGuiInset = true
 fallenWareScreenUI.ResetOnSpawn = false 
 
@@ -50,7 +51,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Parent = titleFrame
 titleText.Size = UDim2.new(1, 0, 1, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "FALLENWARE"
+titleText.Text = "UZIWARE + ZENWARE" -- Updated Title
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.TextScaled = true
 titleText.Font = Enum.Font.Code
@@ -83,6 +84,14 @@ bottomBar.Position = UDim2.new(0, 0, 0.9, 0)
 bottomBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 bottomBar.ZIndex = 10
 addUICorner(10, bottomBar)
+
+--- KEYBIND TOGGLE (Right Shift) ---
+table.insert(connections, UIS.InputBegan:Connect(function(input, gpe)
+	if not gpe and input.KeyCode == Enum.KeyCode.RightShift then
+		guiVisible = not guiVisible
+		mainUI.Visible = guiVisible
+	end
+end))
 
 --- DRAGGING ---
 local dragging, dragStart, startPos
@@ -133,7 +142,6 @@ local function createESP(obj, isPlayer)
 	
 	if not color and not isPlayer then return end
 
-	-- BILLBOARD GUI FOR BOX AND TEXT
 	local bill = Instance.new("BillboardGui")
 	bill.AlwaysOnTop = true
 	bill.Adornee = targetPart
@@ -141,23 +149,19 @@ local function createESP(obj, isPlayer)
 	
 	local boxFrame
 	if isPlayer then
-		-- LARGE GUI BOX FOR PLAYERS
-		bill.Size = UDim2.fromScale(6, 8) -- Made it much bigger
+		bill.Size = UDim2.fromScale(6, 8) 
 		boxFrame = Instance.new("Frame")
 		boxFrame.Parent = bill
 		boxFrame.Size = UDim2.fromScale(1, 1)
 		boxFrame.BackgroundTransparency = 1
-		boxFrame.BorderSizePixel = 3
-		boxFrame.BorderMode = Enum.BorderMode.Inset
-		boxFrame.BorderColor3 = color
 		
-		-- Simple UI Stroke for the thickness
 		local stroke = Instance.new("UIStroke")
 		stroke.Thickness = 2
 		stroke.Color = color
 		stroke.Parent = boxFrame
+		
+		tracked[obj] = {gui = bill, box = boxFrame, part = targetPart, name = labelName, isPlayer = true}
 	else
-		-- STANDARD TEXT ESP FOR ITEMS
 		bill.Size = UDim2.fromOffset(120, 50)
 		bill.StudsOffset = Vector3.new(0, 3, 0)
 		
@@ -170,10 +174,7 @@ local function createESP(obj, isPlayer)
 		label.Font = Enum.Font.GothamBold
 		
 		tracked[obj] = {gui = bill, text = label, part = targetPart, name = labelName, isPlayer = false}
-		return
 	end
-	
-	tracked[obj] = {gui = bill, box = boxFrame, part = targetPart, name = labelName, isPlayer = true}
 end
 
 -- HEARTBEAT
@@ -185,7 +186,9 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
 	for obj, data in pairs(tracked) do
 		if obj and obj.Parent and data.part then
 			if data.isPlayer then
-				data.box.UIStroke.Color = rainbow
+				if data.box:FindFirstChild("UIStroke") then
+					data.box.UIStroke.Color = rainbow
+				end
 			else
 				if hrp then
 					local dist = math.floor((hrp.Position - data.part.Position).Magnitude)
