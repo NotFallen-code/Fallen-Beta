@@ -33,8 +33,6 @@ local toggles = {
 	["ShowTeam"] = false, ["ShowName"] = false, ["ShowKit"] = false,
 	["DevMode"] = false, ["KitRender"] = false
 }
-local boxFilter = "Everyone" -- Everyone, Enemy, Team
-local uiVisible = true
 local connections = {}
 
 -- UI Helpers
@@ -68,10 +66,10 @@ end
 
 -- Screen GUI
 local feenWareGUI = Instance.new("ScreenGui", playerGUI)
-feenWareGUI.Name = "FEENWARE_FINAL_V2"
+feenWareGUI.Name = "FEENWARE_V_PERFECT"
 feenWareGUI.IgnoreGuiInset = true
 feenWareGUI.ResetOnSpawn = false 
-feenWareGUI.DisplayOrder = 999999999
+feenWareGUI.DisplayOrder = 999999999 -- THIS PREVENTS GAME GUI OVERRIDE
 
 -- MAIN MENU
 local mainUI = Instance.new("Frame", feenWareGUI)
@@ -134,17 +132,6 @@ kitScroll.ScrollBarThickness = 0
 kitScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 Instance.new("UIListLayout", kitScroll).Padding = UDim.new(0, 10)
 
--- Global Toggle (RightShift)
-table.insert(connections, UIS.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	if input.KeyCode == Enum.KeyCode.RightShift then
-		uiVisible = not uiVisible
-		mainUI.Visible = uiVisible
-		-- Only show Kit Render if it was toggled ON
-		kitFrame.Visible = uiVisible and toggles["KitRender"]
-	end
-end))
-
 -- ESP Functions
 local function getESPConfig(obj)
 	local name = obj.Name:lower()
@@ -173,6 +160,7 @@ end
 
 local function createESP(obj, isPlayer)
 	if not isPlayer and (tracked[obj.Parent] or (obj:IsA("BasePart") and tracked[obj.Parent])) then return end
+	
 	if isPlayer then
 		local p = Players:GetPlayerFromCharacter(obj)
 		if p == localPlayer and not toggles["DevMode"] then return end
@@ -229,7 +217,7 @@ local function createESP(obj, isPlayer)
 	}
 end
 
--- Kit Render
+-- Kit Render (Grouping Players under Team Header)
 local function updateRender()
 	kitScroll:ClearAllChildren()
 	Instance.new("UIListLayout", kitScroll).Padding = UDim.new(0, 10)
@@ -291,24 +279,14 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
 	for obj, data in pairs(tracked) do
 		if obj and obj.Parent and data.part then
 			if data.isPlayer then
-				-- FILTER LOGIC
-				local isLocal = (data.player == localPlayer)
-				if isLocal and not toggles["DevMode"] then
+				if data.player == localPlayer and not toggles["DevMode"] then
 					data.gui.Enabled = false data.info.Enabled = false continue
 				end
 
-				local isSameTeam = (data.player.Team == localPlayer.Team)
-				local shouldShowByFilter = false
-				if boxFilter == "Everyone" then shouldShowByFilter = true
-				elseif boxFilter == "Enemy Only" then shouldShowByFilter = not isSameTeam
-				elseif boxFilter == "Team Only" then shouldShowByFilter = isSameTeam end
-
-				local act = toggles["Box"] and shouldShowByFilter
+				local act = toggles["Box"]
 				data.gui.Enabled = act data.info.Enabled = act
-				
 				if act then
-					-- Team Color Stroke
-					if data.stroke then data.stroke.Color = data.player.TeamColor.Color end
+					if data.stroke then data.stroke.Color = rainbow end
 					data.teamL.Visible = toggles["ShowTeam"]
 					data.nameL.Visible = toggles["ShowName"]
 					data.kitL.Visible = toggles["ShowKit"]
@@ -323,7 +301,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
 					end
 				end
 			else
-				-- RESOURCE ESP
+				-- RESOURCE ESP Logic
 				local espCol, espTypeStr = getESPConfig(obj)
 				local isStar = (data.espType:find("Star"))
 				local itemAct = isStar and toggles["Star"] or toggles[data.espType]
@@ -344,7 +322,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
 	end
 end))
 
--- UI Button Builder
+-- UI Buttons
 local function createBtn(t, p)
 	local b = Instance.new("TextButton", p)
 	b.Size = UDim2.new(0.9, 0, 0, 32)
@@ -356,16 +334,6 @@ local function createBtn(t, p)
 	addUICorner(6, b)
 	return b
 end
-
--- BOX FILTER BUTTON
-local filterBtn = createBtn("BOX FILTER: EVERYONE", scroll)
-filterBtn.Text = "BOX FILTER: EVERYONE"
-filterBtn.Activated:Connect(function()
-	if boxFilter == "Everyone" then boxFilter = "Enemy Only"
-	elseif boxFilter == "Enemy Only" then boxFilter = "Team Only"
-	else boxFilter = "Everyone" end
-	filterBtn.Text = "BOX FILTER: " .. boxFilter:upper()
-end)
 
 local options = {"Bee", "Metal", "Star", "Box", "ShowTeam", "ShowName", "ShowKit"}
 if isDev then table.insert(options, "DevMode") end
@@ -382,25 +350,27 @@ end
 local kr = createBtn("KIT RENDER", scroll)
 kr.Activated:Connect(function()
 	toggles["KitRender"] = not toggles["KitRender"]
-	kitFrame.Visible = toggles["KitRender"] and uiVisible
+	kitFrame.Visible = toggles["KitRender"]
 	kr.Text = "KIT RENDER " .. (toggles["KitRender"] and "[ON]" or "[OFF]")
 	if toggles["KitRender"] then updateRender() end
 end)
 
 -- UNINJECT
 local un = Instance.new("TextButton", mainUI)
-un.Size = UDim2.new(0.9, 0, 0, 32)
+un.Size = UDim2.new(0.9, 0, 0.1, 0)
+un.Position = UDim2.new(0.05, 0, 0.88, 0)
 un.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
 un.TextColor3 = Color3.new(1, 1, 1)
 un.Text = "UNINJECT"
 un.Font = Enum.Font.Code
 un.TextScaled = true
 addUICorner(6, un)
-table.insert(connections, un.Activated:Connect(function()
+
+un.Activated:Connect(function()
 	for _, c in pairs(connections) do c:Disconnect() end
 	for o, _ in pairs(tracked) do removeESP(o) end
 	feenWareGUI:Destroy()
-end))
+end)
 
 -- Background Loops
 task.spawn(function()
