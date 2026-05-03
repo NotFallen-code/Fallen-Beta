@@ -1,8 +1,15 @@
 -- UserID Lock
-if game.Players.LocalPlayer.UserId ~= 10842219571 or 10659493361 or 7280191809 then 
-    return 
-end
+local allowedIds = {
+    [10842219571] = true,
+    [10659493361] = true,
+    [7280191809] = true
+}
 
+if not allowedIds[game.Players.LocalPlayer.UserId] then
+    return
+end
+-- Your GUI code goes here
+print("Access Granted!")
 -- FEENWARE ULTIMATE
 local localPlayer = game.Players.LocalPlayer
 local playerGUI = localPlayer:WaitForChild("PlayerGui")
