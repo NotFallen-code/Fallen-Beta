@@ -5,6 +5,8 @@ local allowedIds = {
     [7280191809] = true
 }
 
+
+
 if not allowedIds[game.Players.LocalPlayer.UserId] then
     return
 end
