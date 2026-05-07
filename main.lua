@@ -51,14 +51,20 @@ local tracked = {}
 local defaultToggles = {
 	["BeeESP"] = false, ["MetalESP"] = false, ["StarESP"] = false, ["BoxESP"] = false,
 	["ShowName"] = false, ["ShowTeam"] = false, ["ShowKit"] = false, ["ShowHealth"] = false, ["DevMode"] = false, 
-	["KitRender"] = false, ["FarmESP"] = false, ["BeehiveESP"] = false, ["TaliyahESP"] = false, ["BedESP"] = false,
+	["KitRender"] = false, ["KitRenderOwnTeam"] = true, ["FarmESP"] = false, ["BeehiveESP"] = false, ["TaliyahESP"] = false, ["BedESP"] = false,
 	["Trails"] = false, ["TrailRainbow"] = false, ["TrailBall"] = false,
 	["AntiAFK"] = false, ["Freecam"] = false, ["FreecamSpeed"] = 2, 
 	["SpinBot"] = false, ["SpinSpeed"] = 20, ["VoidJump"] = false, 
-	["Fly"] = false, ["FlySpeed"] = 20, ["InfJump"] = false, 
+	["Fly"] = false, ["FlySpeed"] = 20, ["InfJump"] = false,
 	["Speed"] = false, ["SpeedValue"] = 23, ["WallClimb"] = false,
 	["KA"] = false, ["KASpeed"] = 0.1, ["KARange"] = 25, ["KAAngle"] = 360,
-	["KAWallCheck"] = false, ["KARequireSword"] = false, ["KATargetMode"] = "Both", ["KAPriority"] = "Player",
+	["KAWallCheck"] = false, ["KARequireSword"] = false, ["KASwingAnim"] = false, ["KASwingSpeed"] = 1.0, ["KASwingRange"] = 25,
+	["KATargetPlayer"] = true, ["KATargetNPC"] = false, ["KATargetDummy"] = false, ["KAPriority"] = "Distance",
+	["FastBreak"] = false, ["FastBreakTimer"] = 0.05,
+	["Nuker"] = false, ["NukerTimer"] = 0.1, ["NukerReqPickaxe"] = true, ["NukerReqAxe"] = false, ["NukerReqShears"] = false, ["NukerBed"] = true, ["NukerOre"] = false, ["NukerPriority"] = "Bed", ["NukerHighlight"] = false,
+	["AutoBuyArmor"] = false,
+	["FastDrop"] = false, ["FastDropSpeed"] = 5,
+	["ExtendedDrop"] = false, ["ExtendedDropRange"] = 20,
 	["StaffDetect"] = false, ["StaffLeave"] = false, ["StaffDestruct"] = false
 }
 local toggles = {}
@@ -123,6 +129,7 @@ if gethui then zenWareGUI.Parent = gethui() else zenWareGUI.Parent = game.CoreGu
 -- UNINJECT / DESTRUCT FUNCTION
 local function uninject() 
 	saveConfig() -- Save on uninject
+	for k, v in pairs(toggles) do if type(v) == "boolean" then toggles[k] = false end end
 	for _, c in pairs(connections) do c:Disconnect() end
 	for o, _ in pairs(tracked) do if tracked[o] and tracked[o].gui then tracked[o].gui:Destroy() end; if tracked[o] and tracked[o].info then tracked[o].info:Destroy() end; if tracked[o] and tracked[o].highlight then tracked[o].highlight:Destroy() end end
 	if flyBodyVel then flyBodyVel:Destroy() end
@@ -163,9 +170,43 @@ local titleFrame = Instance.new("Frame", mainUI); titleFrame.Size = UDim2.new(1,
 local titleText = Instance.new("TextLabel", titleFrame); titleText.Size = UDim2.new(1, 0, 1, 0); titleText.Text = "FEENWARE"; titleText.TextColor3 = c_gold; titleText.Font = Enum.Font.GothamBlack; titleText.TextSize = 22; titleText.BackgroundTransparency = 1
 local titleLine = Instance.new("Frame", titleFrame); titleLine.Size = UDim2.new(1, 0, 0, 2); titleLine.Position = UDim2.new(0, 0, 1, -2); titleLine.BackgroundColor3 = c_gold; titleLine.BorderSizePixel = 0
 
+-- SEARCH BAR
+local searchFrame = Instance.new("Frame", mainUI)
+searchFrame.Size = UDim2.new(0.9, 0, 0, 30)
+searchFrame.Position = UDim2.new(0.05, 0, 0, 55)
+searchFrame.BackgroundColor3 = c_bg3
+addCorner(6, searchFrame)
+
+local searchBox = Instance.new("TextBox", searchFrame)
+searchBox.Size = UDim2.new(1, -10, 1, 0)
+searchBox.Position = UDim2.new(0, 10, 0, 0)
+searchBox.BackgroundTransparency = 1
+searchBox.PlaceholderText = "Search features..."
+searchBox.Text = "" 
+searchBox.TextColor3 = c_text
+searchBox.PlaceholderColor3 = c_textDim
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 12
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
+searchBox.ClearTextOnFocus = false
+
 local scroll = Instance.new("ScrollingFrame", mainUI)
-scroll.Size = UDim2.new(1, 0, 1, -60); scroll.Position = UDim2.new(0, 0, 0, 55); scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 3; scroll.ScrollBarImageColor3 = c_gold; scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Size = UDim2.new(1, 0, 1, -95); scroll.Position = UDim2.new(0, 0, 0, 90); scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 3; scroll.ScrollBarImageColor3 = c_gold; scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 local listLayout = Instance.new("UIListLayout", scroll); listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; listLayout.Padding = UDim.new(0, 6)
+
+local searchableItems = {}
+
+-- SEARCH LOGIC
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local q = searchBox.Text:lower()
+	for _, item in ipairs(searchableItems) do
+		if q == "" or item.name:find(q) then
+			item.container.Visible = true
+		else
+			item.container.Visible = false
+		end
+	end
+end)
 
 -- KIT RENDER FRAME
 local kitFrame = Instance.new("Frame", zenWareGUI)
@@ -179,6 +220,7 @@ local kitScroll = Instance.new("ScrollingFrame", kitFrame); kitScroll.Size = UDi
 local function createSec(title)
 	local f = Instance.new("Frame", scroll); f.Size = UDim2.new(0.9, 0, 0, 25); f.BackgroundTransparency = 1
 	local t = Instance.new("TextLabel", f); t.Size = UDim2.new(1, 0, 1, 0); t.BackgroundTransparency = 1; t.Text = " " .. title; t.TextColor3 = c_goldDark; t.Font = Enum.Font.GothamBold; t.TextSize = 12; t.TextXAlignment = Enum.TextXAlignment.Left
+	table.insert(searchableItems, {name = title:lower(), container = f})
 	return f
 end
 
@@ -212,7 +254,7 @@ local function attachKeybind(btn, id, title)
 	updateKB()
 end
 
-local function createToggle(id, title, parent, callback)
+local function createToggle(id, title, parent, callback, conditionCheck)
 	local container = Instance.new("Frame", parent or scroll); container.Size = UDim2.new(0.9, 0, 0, 38); container.BackgroundTransparency = 1
 	local b = Instance.new("TextButton", container); b.Size = UDim2.new(1, 0, 1, 0); b.BackgroundColor3 = c_bg3; b.TextColor3 = c_text; b.Font = Enum.Font.GothamSemibold; b.TextSize = 13; b.TextXAlignment = Enum.TextXAlignment.Left; addCorner(6, b); addPad(b, 15)
 	attachKeybind(b, id, title)
@@ -222,16 +264,19 @@ local function createToggle(id, title, parent, callback)
 	end
 	uiVisuals[id] = updateVis
 	b.Activated:Connect(function() 
+		if not toggles[id] and conditionCheck and not conditionCheck() then return end
 		toggles[id] = not toggles[id]
 		updateVis()
 		if callback then callback() end
 		notify(title .. (toggles[id] and " Enabled" or " Disabled"), toggles[id])
 		saveConfig() 
 	end)
-	updateVis(); return container
+	updateVis()
+	table.insert(searchableItems, {name = title:lower(), container = container})
+	return container
 end
 
-local function createExpandable(id, title, callback)
+local function createExpandable(id, title, callback, conditionCheck)
 	local container = Instance.new("Frame", scroll); container.Size = UDim2.new(0.9, 0, 0, 38); container.BackgroundTransparency = 1
 	local row = Instance.new("Frame", container); row.Size = UDim2.new(1, 0, 0, 38); row.BackgroundTransparency = 1
 	local b = Instance.new("TextButton", row); b.Size = UDim2.new(0.82, -5, 1, 0); b.BackgroundColor3 = c_bg3; b.TextColor3 = c_text; b.Font = Enum.Font.GothamSemibold; b.TextSize = 13; b.TextXAlignment = Enum.TextXAlignment.Left; addCorner(6, b); addPad(b, 15)
@@ -239,16 +284,22 @@ local function createExpandable(id, title, callback)
 	local gearBtn = Instance.new("TextButton", row); gearBtn.Size = UDim2.new(0.18, 0, 1, 0); gearBtn.Position = UDim2.new(0.82, 5, 0, 0); gearBtn.BackgroundColor3 = c_bg2; gearBtn.Text = "⚙"; gearBtn.TextColor3 = c_textDim; gearBtn.Font = Enum.Font.GothamBlack; gearBtn.TextSize = 16; addCorner(6, gearBtn)
 	local subCont = Instance.new("Frame", container); subCont.Size = UDim2.new(1, 0, 0, 0); subCont.Position = UDim2.new(0, 0, 0, 44); subCont.Visible = false; subCont.BackgroundTransparency = 1; local subList = Instance.new("UIListLayout", subCont); subList.Padding = UDim.new(0, 4)
 	gearBtn.Activated:Connect(function() subCont.Visible = not subCont.Visible; container.Size = subCont.Visible and UDim2.new(0.9, 0, 0, 44 + subList.AbsoluteContentSize.Y) or UDim2.new(0.9, 0, 0, 38) end)
-	local function updateVis() applyGoldTheme(b, toggles[id], title) end
+	local function updateVis() 
+		applyGoldTheme(b, toggles[id], title) 
+		if id == "KitRender" then kitFrame.Visible = (toggles[id] and uiVisible) end
+	end
 	uiVisuals[id] = updateVis
 	b.Activated:Connect(function() 
+		if not toggles[id] and conditionCheck and not conditionCheck() then return end
 		toggles[id] = not toggles[id]; 
 		updateVis(); 
 		if callback then callback() end
 		notify(title .. (toggles[id] and " Enabled" or " Disabled"), toggles[id]); 
 		saveConfig() 
 	end)
-	updateVis(); return subCont
+	updateVis()
+	table.insert(searchableItems, {name = title:lower(), container = container})
+	return subCont
 end
 
 local function createSubOption(id, title, parent, isToggle)
@@ -292,6 +343,10 @@ local function createSlider(id, title, min, max, parent, isFloat)
 	updateVis()
 end
 
+local function addManualSearch(name, inst)
+	table.insert(searchableItems, {name = name:lower(), container = inst})
+end
+
 -- LEAVE PARTY LOGIC
 local function leaveParty()
 	pcall(function()
@@ -328,10 +383,10 @@ local function handleStaffScan()
 end
 
 -- ==========================================
--- KA LOGIC (CLEAN STATE-BASED SPOOFING)
+-- KA LOGIC (HYPER-OPTIMIZED & STATELESS)
 -- ==========================================
 local SwordHit = ReplicatedStorage.rbxts_include.node_modules:FindFirstChild("@rbxts").net.out._NetManaged.SwordHit
-local npcCache = {}
+local cachedTargets = {}
 
 -- Dynamic Multi-Point Raycast
 local function isTargetVisible(startPos, targetModel, ignoreList)
@@ -352,25 +407,28 @@ local function isTargetVisible(startPos, targetModel, ignoreList)
 	return false 
 end
 
--- Anti-Lag Target Cacher
+-- Hyper-Optimized Target Cacher (No deep descendants lag)
 task.spawn(function()
-	while true do
-		task.wait(1.5)
+	while zenWareGUI.Parent do
+		task.wait(0.5) 
 		local newCache = {}
-		local descendants = workspace:GetDescendants()
 		
-		for i, model in ipairs(descendants) do
-			if i % 1000 == 0 then task.wait() end 
-			
-			if model:IsA("Model") and model ~= character and not Players:GetPlayerFromCharacter(model) then
-				local hum = model:FindFirstChildOfClass("Humanoid")
-				local root = model:FindFirstChild("HumanoidRootPart")
-				if hum and root and hum.Health > 0 then
-					table.insert(newCache, model)
+		local function scanFolder(folder)
+			if not folder then return end
+			for _, obj in ipairs(folder:GetChildren()) do
+				if obj:IsA("Model") and obj ~= character and not Players:GetPlayerFromCharacter(obj) then
+					local hum = obj:FindFirstChildOfClass("Humanoid")
+					if hum and hum.Health > 0 then
+						table.insert(newCache, obj)
+					end
 				end
 			end
 		end
-		npcCache = newCache
+		
+		scanFolder(workspace)
+		if workspace:FindFirstChild("Live") then scanFolder(workspace.Live) end
+		
+		cachedTargets = newCache
 	end
 end)
 
@@ -379,176 +437,173 @@ task.spawn(function()
 	local SetInvItemRemote = ReplicatedStorage.rbxts_include.node_modules:FindFirstChild("@rbxts")
 	if SetInvItemRemote then SetInvItemRemote = SetInvItemRemote.net.out._NetManaged:FindFirstChild("SetInvItem") end
 	
-	local lastSpoofedItem = nil
-	local lastSpoofTime = 0
+	local swingAnimInst = Instance.new("Animation")
+	swingAnimInst.AnimationId = "rbxassetid://4947108314"
+	local loadedSwingAnim = nil
+	local currentAnimHum = nil
+	local lastSwingTime = 0
 
-	while true do
+	while zenWareGUI.Parent do
 		task.wait(toggles.KASpeed or 0.1)
 		
-		-- Safety check / Turned Off
-		if not (toggles.KA and hrp and hrp.Parent and character and character.Parent) then 
-			if lastSpoofedItem ~= nil then
-				lastSpoofedItem = nil
-				if SetInvItemRemote then
-					local wList = ReplicatedStorage:FindFirstChild("Inventories") and ReplicatedStorage.Inventories:FindFirstChild(localPlayer.Name)
-					if wList and character then
-						for _, item in ipairs(character:GetChildren()) do
-							if (item:IsA("Model") or item:IsA("Accessory") or item:IsA("Tool")) and wList:FindFirstChild(item.Name) then
-								local eItem = wList:FindFirstChild(item.Name)
-								task.spawn(function() pcall(function() SetInvItemRemote:InvokeServer({hand = eItem}) end) end)
-								break
-							end
-						end
+		local char = localPlayer.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChild("Humanoid")
+		
+		-- Master abort condition (death, unequipped, etc.)
+		if not toggles.KA or not char or not hrp or not hum or hum.Health <= 0 then
+			continue
+		end
+		
+		-- Inventory scanning
+		local invFolder = ReplicatedStorage:FindFirstChild("Inventories") and ReplicatedStorage.Inventories:FindFirstChild(localPlayer.Name)
+		local equippedItem = nil
+		
+		if char and invFolder then
+			for _, item in ipairs(char:GetChildren()) do
+				if item:IsA("Model") or item:IsA("Accessory") or item:IsA("Tool") then
+					local found = invFolder:FindFirstChild(item.Name)
+					if found then
+						equippedItem = found
+						break
 					end
 				end
 			end
-			continue 
 		end
-		
-		local hum = character:FindFirstChild("Humanoid")
-		if not hum or hum.Health <= 0 then 
-			lastSpoofedItem = nil 
-			continue 
-		end 
-		
-		local closestPlayer = nil
-		local closestPlayerDist = math.huge
-		local closestNPC = nil
-		local closestNPCDist = math.huge
-		
+
+		-- Verify what we are holding
+		local isHoldingSword = false
+		if equippedItem then
+			local n = equippedItem.Name:lower()
+			if n:find("sword") or n:find("blade") or n:find("dao") or n:find("scythe") or n:find("dagger") or n:find("rageblade") then
+				isHoldingSword = true
+			end
+		end
+
+		-- Master Requirement Check
+		if toggles.KARequireSword and not isHoldingSword then
+			continue
+		end
+
+		-- Determine best sword for spoofing if needed
+		local bestSword = nil
+		if isHoldingSword then
+			bestSword = equippedItem
+		elseif invFolder then
+			local priorityWeapons = {
+				"emerald_sword", "diamond_sword", "iron_sword", "stone_sword", "wood_sword", 
+				"rageblade", "emerald_dao", "diamond_dao", "iron_dao", "stone_dao", "wood_dao",
+				"emerald_scythe", "diamond_scythe", "iron_scythe", "stone_scythe", "wood_scythe",
+				"emerald_dagger", "diamond_dagger", "iron_dagger", "stone_dagger", "wood_dagger"
+			}
+			for _, sName in ipairs(priorityWeapons) do
+				local w = invFolder:FindFirstChild(sName)
+				if w then bestSword = w; break end
+			end
+			if not bestSword then
+				for _, w in ipairs(invFolder:GetChildren()) do
+					local n = w.Name:lower()
+					if n:find("sword") or n:find("blade") or n:find("dao") or n:find("scythe") or n:find("dagger") then 
+						bestSword = w 
+						break 
+					end
+				end
+			end
+		end
+
+		-- If we have nothing to hit with, skip
+		local weaponToUse = bestSword or equippedItem
+		if not weaponToUse then continue end
+
+		-- Range and Angle setup
 		local range = toggles.KARange or 25
 		local maxAngle = (toggles.KAAngle or 360) / 2 
+		local targetGroups = {Player = {}, NPC = {}, Dummy = {}}
 		
-		-- Merge Live Players + Cached NPCs for zero-lag targeting
-		local possibleTargets = {}
+		-- Gather Targets
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= localPlayer and p.Character then
 				local phum = p.Character:FindFirstChildOfClass("Humanoid")
-				if phum and phum.Health > 0 then table.insert(possibleTargets, p.Character) end
+				if phum and phum.Health > 0 then table.insert(targetGroups.Player, p.Character) end
 			end
 		end
-		for _, npc in ipairs(npcCache) do
+		for _, npc in ipairs(cachedTargets) do
 			if npc and npc.Parent then
 				local nhum = npc:FindFirstChildOfClass("Humanoid")
-				if nhum and nhum.Health > 0 then table.insert(possibleTargets, npc) end
+				if nhum and nhum.Health > 0 then 
+					if npc.Name:lower():find("dummy") then table.insert(targetGroups.Dummy, npc)
+					else table.insert(targetGroups.NPC, npc) end
+				end
 			end
 		end
 		
-		for _, model in ipairs(possibleTargets) do
-			local targetHRP = model:FindFirstChild("HumanoidRootPart")
-			if targetHRP then
-				local dirVec = targetHRP.Position - hrp.Position
-				local dist = dirVec.Magnitude
-				
-				if dist <= range then
-					local dotProduct = hrp.CFrame.LookVector:Dot(dirVec.Unit)
-					local angleToTarget = math.deg(math.acos(math.clamp(dotProduct, -1, 1)))
-					
-					if angleToTarget <= maxAngle then
-						local isBlocked = false
-						if toggles.KAWallCheck then
-							isBlocked = not isTargetVisible(hrp.Position, model, {character, model})
-						end
-						
-						if not isBlocked then
-							local isRealPlayer = Players:GetPlayerFromCharacter(model) ~= nil
-							local mode = toggles.KATargetMode or "Both"
-							
-							if isRealPlayer and (mode == "Players" or mode == "Both") then
-								if dist < closestPlayerDist then
-									closestPlayerDist = dist
-									closestPlayer = model
-								end
-							elseif not isRealPlayer and (mode == "NPCs" or mode == "Both") then
-								if dist < closestNPCDist then
-									closestNPCDist = dist
-									closestNPC = model
-								end
+		-- Target Processing
+		local closestPlayer, pDist = nil, math.huge
+		local closestNPC, nDist = nil, math.huge
+		local closestDummy, dDist = nil, math.huge
+
+		local function checkTargetGroup(groupList)
+			local cTarget, cDist = nil, math.huge
+			for _, model in ipairs(groupList) do
+				local targetHRP = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+				if targetHRP then
+					local dirVec = targetHRP.Position - hrp.Position
+					local dist = dirVec.Magnitude
+					if dist <= range then
+						local dotProduct = hrp.CFrame.LookVector:Dot(dirVec.Unit)
+						local angleToTarget = math.deg(math.acos(math.clamp(dotProduct, -1, 1)))
+						if angleToTarget <= maxAngle then
+							local isBlocked = false
+							if toggles.KAWallCheck then isBlocked = not isTargetVisible(hrp.Position, model, {char, model}) end
+							if not isBlocked and dist < cDist then
+								cDist = dist
+								cTarget = model
 							end
 						end
 					end
 				end
 			end
+			return cTarget, cDist
 		end
+
+		if toggles.KATargetPlayer then closestPlayer, pDist = checkTargetGroup(targetGroups.Player) end
+		if toggles.KATargetNPC then closestNPC, nDist = checkTargetGroup(targetGroups.NPC) end
+		if toggles.KATargetDummy then closestDummy, dDist = checkTargetGroup(targetGroups.Dummy) end
 		
+		-- Priority Selection
 		local targetEnemy = nil
-		if toggles.KATargetMode == "Both" then
-			if toggles.KAPriority == "Player" then
-				targetEnemy = closestPlayer or closestNPC
-			else
-				targetEnemy = closestNPC or closestPlayer
-			end
-		elseif toggles.KATargetMode == "Players" then
-			targetEnemy = closestPlayer
-		elseif toggles.KATargetMode == "NPCs" then
-			targetEnemy = closestNPC
-		end
+		local finalEnemyDist = math.huge
 		
-		local weaponList = ReplicatedStorage:FindFirstChild("Inventories") and ReplicatedStorage.Inventories:FindFirstChild(localPlayer.Name)
-		local weaponToUse = nil
-		local canAttack = false
-		local equippedItem = nil
-		
-		if weaponList then
-			for _, item in ipairs(character:GetChildren()) do
-				if item:IsA("Model") or item:IsA("Accessory") or item:IsA("Tool") then
-					local inInv = weaponList:FindFirstChild(item.Name)
-					if inInv then
-						equippedItem = inInv
-						break
-					end
-				end
-			end
-
-			if toggles.KARequireSword then
-				if equippedItem then
-					local n = equippedItem.Name:lower()
-					if n:find("sword") or n:find("blade") or n:find("dao") or n:find("scythe") or n:find("dagger") or n:find("rageblade") then
-						canAttack = true
-						weaponToUse = equippedItem
-					end
-				end
-			else
-				local priorityWeapons = {
-					"emerald_sword", "diamond_sword", "iron_sword", "stone_sword", "wood_sword", 
-					"rageblade", "emerald_dao", "diamond_dao", "iron_dao", "stone_dao", "wood_dao",
-					"emerald_scythe", "diamond_scythe", "iron_scythe", "stone_scythe", "wood_scythe",
-					"emerald_dagger", "diamond_dagger", "iron_dagger", "stone_dagger", "wood_dagger"
-				}
-				
-				for _, sName in ipairs(priorityWeapons) do
-					local w = weaponList:FindFirstChild(sName)
-					if w then
-						weaponToUse = w
-						canAttack = true
-						break
-					end
-				end
-				
-				if not weaponToUse then
-					for _, w in ipairs(weaponList:GetChildren()) do
-						local n = w.Name:lower()
-						if n:find("sword") or n:find("blade") or n:find("dao") or n:find("scythe") or n:find("dagger") then 
-							weaponToUse = w 
-							canAttack = true
-							break 
-						end
-					end
-				end
-				
-				if not weaponToUse and equippedItem then
-					weaponToUse = equippedItem
-					canAttack = true
-				end
+		if toggles.KAPriority == "Player" then
+			targetEnemy = closestPlayer or closestNPC or closestDummy
+			finalEnemyDist = closestPlayer and pDist or (closestNPC and nDist or dDist)
+		elseif toggles.KAPriority == "NPC" then
+			targetEnemy = closestNPC or closestPlayer or closestDummy
+			finalEnemyDist = closestNPC and nDist or (closestPlayer and pDist or dDist)
+		elseif toggles.KAPriority == "Dummy" then
+			targetEnemy = closestDummy or closestPlayer or closestNPC
+			finalEnemyDist = closestDummy and dDist or (closestPlayer and pDist or nDist)
+		else -- Distance
+			local allValid = {}
+			if closestPlayer then table.insert(allValid, {m=closestPlayer, d=pDist}) end
+			if closestNPC then table.insert(allValid, {m=closestNPC, d=nDist}) end
+			if closestDummy then table.insert(allValid, {m=closestDummy, d=dDist}) end
+			table.sort(allValid, function(a,b) return a.d < b.d end)
+			if #allValid > 0 then 
+				targetEnemy = allValid[1].m 
+				finalEnemyDist = allValid[1].d
 			end
 		end
 
-		-- Attack Execution 
-		if canAttack and weaponToUse and targetEnemy then
-			local targetHRP = targetEnemy:FindFirstChild("HumanoidRootPart")
+		-- Execution Core
+		if targetEnemy then
+			local targetHRP = targetEnemy:FindFirstChild("HumanoidRootPart") or targetEnemy.PrimaryPart or targetEnemy:FindFirstChildWhichIsA("BasePart")
 			if targetHRP then
 				local direction = (targetHRP.Position - hrp.Position).Unit
-				local fakePos = targetHRP.Position - (direction * 3.5)
+				
+				-- Reach Spoofing
+				local reachOffset = math.clamp(finalEnemyDist - 14, 0, 14.4)
+				local fakePos = hrp.Position + (direction * reachOffset)
 				
 				local args = {
 					[1] = {
@@ -558,7 +613,7 @@ task.spawn(function()
 							["targetPosition"] = { ["value"] = targetHRP.Position },
 							["raycast"] = {
 								["cursorDirection"] = { ["value"] = direction },
-								["cameraPosition"] = { ["value"] = cam.CFrame.Position }
+								["cameraPosition"] = { ["value"] = fakePos }
 							},
 							["selfPosition"] = { ["value"] = fakePos }
 						},
@@ -566,37 +621,50 @@ task.spawn(function()
 					}
 				}
 				
-				local needsSpoof = (not toggles.KARequireSword) and (weaponToUse ~= equippedItem) and SetInvItemRemote
-				
-				if needsSpoof then
-					-- Clean silent refresh: Re-assert spoof twice a second to completely override Bedwars race-conditions
-					if lastSpoofedItem ~= weaponToUse or (tick() - lastSpoofTime > 0.5) then
-						lastSpoofedItem = weaponToUse
-						lastSpoofTime = tick()
-						task.spawn(function() pcall(function() SetInvItemRemote:InvokeServer({hand = weaponToUse}) end) end)
+				-- Run hit sequence sequentially in a thread to match precise game timing
+				task.spawn(function()
+					local needsSpoof = (weaponToUse ~= equippedItem) and SetInvItemRemote
+					
+					-- Phase 1: Switch to Sword
+					if needsSpoof then
+						pcall(function() SetInvItemRemote:InvokeServer({hand = weaponToUse}) end)
 					end
-				else
-					if lastSpoofedItem ~= nil then
-						lastSpoofedItem = nil
-						if SetInvItemRemote and equippedItem then
-							task.spawn(function() pcall(function() SetInvItemRemote:InvokeServer({hand = equippedItem}) end) end)
+					
+					-- Phase 2: Hit
+					pcall(function() SwordHit:FireServer(unpack(args)) end)
+					
+					-- Phase 3: Instantly revert back to Original Item
+					if needsSpoof and equippedItem then
+						pcall(function() SetInvItemRemote:InvokeServer({hand = equippedItem}) end)
+					end
+					
+					-- Visual Animation
+					if toggles.KASwingAnim then
+						if finalEnemyDist <= (toggles.KASwingRange or 25) then
+							local now = tick()
+							local animCooldown = 0.45 / (toggles.KASwingSpeed or 1.0)
+							if now - lastSwingTime >= animCooldown then
+								lastSwingTime = now
+								pcall(function()
+									local animHum = char:FindFirstChild("Humanoid")
+									if animHum then
+										local animator = animHum:FindFirstChild("Animator")
+										if animator then
+											if currentAnimHum ~= animHum then
+												loadedSwingAnim = animator:LoadAnimation(swingAnimInst)
+												currentAnimHum = animHum
+											end
+											if loadedSwingAnim then
+												loadedSwingAnim:Play(0.1)
+												loadedSwingAnim:AdjustSpeed(toggles.KASwingSpeed or 1.0)
+											end
+										end
+									end
+								end)
+							end
 						end
 					end
-				end
-				
-				task.spawn(function()
-					pcall(function() SwordHit:FireServer(unpack(args)) end)
 				end)
-			end
-		else
-			-- Revert spoof immediately if there's nothing to attack
-			if lastSpoofedItem ~= nil then
-				lastSpoofedItem = nil
-				if SetInvItemRemote and equippedItem then
-					task.spawn(function()
-						pcall(function() SetInvItemRemote:InvokeServer({hand = equippedItem}) end)
-					end)
-				end
 			end
 		end
 	end
@@ -662,28 +730,26 @@ createSec("MOVEMENT & COMBAT")
 
 local kaSub = createExpandable("KA", "KA")
 createSlider("KASpeed", "Wait", 0.01, 2.0, kaSub, true)
-createSlider("KARange", "Studs", 5, 25, kaSub, false)
+createSlider("KARange", "Studs", 5, 100, kaSub, false)
 createSlider("KAAngle", "Angle (FOV)", 10, 360, kaSub, false)
 createSubOption("KAWallCheck", "WALL CHECK", kaSub, true)
 createSubOption("KARequireSword", "REQUIRE SWORD HELD", kaSub, true)
+createSubOption("KASwingAnim", "SWING ANIMATION", kaSub, true)
+createSlider("KASwingRange", "ANIM RANGE", 5, 100, kaSub, false)
+createSlider("KASwingSpeed", "ANIM SPEED", 0.1, 3.0, kaSub, true)
 
--- Target Mode Button
-local kaTM = createSubOption("KATargetMode", "TARGET: BOTH", kaSub, false)
-uiVisuals.KATargetMode = function() kaTM.Text = "TARGET: " .. toggles.KATargetMode:upper() end
-kaTM.Activated:Connect(function() 
-	if toggles.KATargetMode == "Both" then toggles.KATargetMode = "Players"
-	elseif toggles.KATargetMode == "Players" then toggles.KATargetMode = "NPCs"
-	else toggles.KATargetMode = "Both" end
-	uiVisuals.KATargetMode()
-	saveConfig()
-	notify("Target Mode: " .. toggles.KATargetMode:upper(), true)
-end)
+createSubOption("KATargetPlayer", "TARGET: PLAYER", kaSub, true)
+createSubOption("KATargetNPC", "TARGET: NPC", kaSub, true)
+createSubOption("KATargetDummy", "TARGET: DUMMY", kaSub, true)
 
 -- Priority Mode Button
-local kaPrio = createSubOption("KAPriority", "PRIORITY: PLAYER", kaSub, false)
-uiVisuals.KAPriority = function() kaPrio.Text = "PRIORITY: " .. toggles.KAPriority:upper() end
+local kaPrio = createSubOption("KAPriority", "PRIO: DISTANCE", kaSub, false)
+uiVisuals.KAPriority = function() kaPrio.Text = "PRIO: " .. toggles.KAPriority:upper() end
 kaPrio.Activated:Connect(function() 
-	toggles.KAPriority = (toggles.KAPriority == "Player") and "NPC" or "Player"
+	if toggles.KAPriority == "Distance" then toggles.KAPriority = "Player"
+	elseif toggles.KAPriority == "Player" then toggles.KAPriority = "NPC"
+	elseif toggles.KAPriority == "NPC" then toggles.KAPriority = "Dummy"
+	else toggles.KAPriority = "Distance" end
 	uiVisuals.KAPriority()
 	saveConfig()
 	notify("KA Priority: " .. toggles.KAPriority:upper(), true)
@@ -742,7 +808,42 @@ fF.Activated:Connect(function()
 end)
 
 createSec("MISC")
-createToggle("KitRender", "KIT RENDER")
+
+local fbSub = createExpandable("FastBreak", "FAST BREAK")
+createSlider("FastBreakTimer", "Wait Time", 0.01, 0.5, fbSub, true)
+
+local nuSub = createExpandable("Nuker", "NUKER")
+createSlider("NukerTimer", "Break Speed", 0.01, 1.0, nuSub, true)
+createSubOption("NukerReqPickaxe", "REQUIRE PICKAXE", nuSub, true)
+createSubOption("NukerReqAxe", "REQUIRE AXE", nuSub, true)
+createSubOption("NukerReqShears", "REQUIRE SHEARS", nuSub, true)
+createSubOption("NukerBed", "DESTROY BEDS", nuSub, true)
+createSubOption("NukerOre", "DESTROY ORES", nuSub, true)
+
+local nuPrio = createSubOption("NukerPriority", "PRIO: BED", nuSub, false)
+uiVisuals.NukerPriority = function() nuPrio.Text = "PRIO: " .. toggles.NukerPriority:upper() end
+nuPrio.Activated:Connect(function() 
+	if toggles.NukerPriority == "Bed" then toggles.NukerPriority = "Ore"
+	elseif toggles.NukerPriority == "Ore" then toggles.NukerPriority = "Distance"
+	else toggles.NukerPriority = "Bed" end
+	uiVisuals.NukerPriority()
+	saveConfig()
+	notify("Nuker Priority: " .. toggles.NukerPriority:upper(), true)
+end)
+
+createSubOption("NukerHighlight", "HIGHLIGHT TARGET", nuSub, true)
+
+-- AUTO BUY ARMOR FEATURE
+local abSub = createExpandable("AutoBuyArmor", "AUTO BUY ARMOR")
+
+local fdSub = createExpandable("FastDrop", "FAST DROP")
+createSlider("FastDropSpeed", "Drop Multiplier", 1, 40, fdSub, false)
+
+local edSub = createExpandable("ExtendedDrop", "EXTENDED PICKUP")
+createSlider("ExtendedDropRange", "Range (Studs)", 8, 40, edSub, false)
+
+local krSub = createExpandable("KitRender", "KIT RENDER")
+createSubOption("KitRenderOwnTeam", "INCLUDE OWN TEAM", krSub, true)
 
 local sdSub = createExpandable("StaffDetect", "STAFF DETECT", handleStaffScan)
 createSubOption("StaffLeave", "LEAVE PARTY", sdSub, true)
@@ -750,6 +851,7 @@ createSubOption("StaffDestruct", "DESTRUCT", sdSub, true)
 
 local lParty = Instance.new("TextButton", scroll); lParty.Size = UDim2.new(0.9, 0, 0, 38); lParty.BackgroundColor3 = Color3.fromRGB(20, 20, 50); lParty.TextColor3 = c_text; lParty.Text = "LEAVE PARTY"; lParty.Font = Enum.Font.GothamBold; lParty.TextSize = 13; addCorner(6, lParty)
 lParty.Activated:Connect(function() notify("Leaving Party...", true); leaveParty() end)
+addManualSearch("leave party", lParty)
 
 -- RESET AND UNINJECT BUTTONS
 local disAll = Instance.new("TextButton", scroll); disAll.Size = UDim2.new(0.9, 0, 0, 38); disAll.BackgroundColor3 = Color3.fromRGB(60, 40, 0); disAll.TextColor3 = c_text; disAll.Text = "DISABLE ALL TOGGLES"; disAll.Font = Enum.Font.GothamBold; disAll.TextSize = 13; addCorner(6, disAll)
@@ -761,6 +863,7 @@ disAll.Activated:Connect(function()
 	notify("All toggles disabled.", false)
 	saveConfig()
 end)
+addManualSearch("disable all toggles", disAll)
 
 local unbAll = Instance.new("TextButton", scroll); unbAll.Size = UDim2.new(0.9, 0, 0, 38); unbAll.BackgroundColor3 = Color3.fromRGB(60, 20, 60); unbAll.TextColor3 = c_text; unbAll.Text = "UNBIND ALL HOTKEYS"; unbAll.Font = Enum.Font.GothamBold; unbAll.TextSize = 13; addCorner(6, unbAll)
 unbAll.Activated:Connect(function()
@@ -769,6 +872,7 @@ unbAll.Activated:Connect(function()
 	notify("All hotkeys unbound.", false)
 	saveConfig()
 end)
+addManualSearch("unbind all hotkeys", unbAll)
 
 local rstAll = Instance.new("TextButton", scroll); rstAll.Size = UDim2.new(0.9, 0, 0, 38); rstAll.BackgroundColor3 = Color3.fromRGB(80, 40, 10); rstAll.TextColor3 = c_text; rstAll.Text = "RESET ALL SETTINGS"; rstAll.Font = Enum.Font.GothamBold; rstAll.TextSize = 13; addCorner(6, rstAll)
 rstAll.Activated:Connect(function()
@@ -778,9 +882,11 @@ rstAll.Activated:Connect(function()
 	notify("All settings and hotkeys reset to default.", true)
 	saveConfig()
 end)
+addManualSearch("reset all settings", rstAll)
 
 local unBtn = Instance.new("TextButton", scroll); unBtn.Size = UDim2.new(0.9, 0, 0, 38); unBtn.BackgroundColor3 = Color3.fromRGB(50, 10, 10); unBtn.TextColor3 = Color3.new(1,0.5,0.5); unBtn.Text = "UNINJECT"; unBtn.Font = Enum.Font.GothamBold; unBtn.TextSize = 14; addCorner(6, unBtn); addPad(unBtn, 0)
 unBtn.Activated:Connect(uninject)
+addManualSearch("uninject", unBtn)
 
 -- LOGIC & PHYSICS LOOPS
 table.insert(connections, workspace.DescendantAdded:Connect(function(v) 
@@ -794,12 +900,10 @@ local function onPlayerAdded(p) table.insert(connections, p.CharacterAdded:Conne
 table.insert(connections, Players.PlayerAdded:Connect(onPlayerAdded))
 for _, p in pairs(Players:GetPlayers()) do onPlayerAdded(p) end
 
-local camAngleX, camAngleY, lastTrail, lastVoidJump, lastInfJump = 0, 0, tick(), 0, 0
+local camAngleX, camAngleY, lastTrail, lastVoidJump = 0, 0, tick(), 0
 local freecamActive = false
-local flyStartTick = 0
-local flyOriginalPos = nil
 
--- Inputs for Freecam
+-- Inputs for Freecam and InfJump
 table.insert(connections, UIS.InputChanged:Connect(function(input)
 	if toggles.Freecam and input.UserInputType == Enum.UserInputType.MouseMovement then
 		if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
@@ -808,6 +912,17 @@ table.insert(connections, UIS.InputChanged:Connect(function(input)
 			camAngleY = math.clamp(camAngleY - (input.Delta.Y * 0.4), -89, 89)
 			cam.CFrame = CFrame.new(cam.CFrame.Position) * CFrame.Angles(0, math.rad(camAngleX), 0) * CFrame.Angles(math.rad(camAngleY), 0, 0)
 		else UIS.MouseBehavior = Enum.MouseBehavior.Default end
+	end
+end))
+
+table.insert(connections, UIS.InputBegan:Connect(function(input, g)
+	if g then return end
+	if input.KeyCode == Enum.KeyCode.Space and toggles.InfJump then
+		local char = localPlayer.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then 
+			hrp.Velocity = Vector3.new(hrp.Velocity.X, 40, hrp.Velocity.Z) 
+		end
 	end
 end))
 
@@ -846,21 +961,13 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
 		hum.AutoRotate = true
 	end
 
-	-- FLY (Bounce Bypass)
+	-- FLY
 	if toggles.Fly and hrp then
-		-- Recovery frame logic to snap back up instantly without yielding
-		if flyOriginalPos then
-			hrp.CFrame = flyOriginalPos
-			flyOriginalPos = nil
-		end
-		
 		if not flyBodyVel or not flyBodyVel.Parent then
 			flyBodyVel = Instance.new("BodyVelocity")
 			flyBodyVel.MaxForce = Vector3.new(100000, 100000, 100000)
 			flyBodyVel.Parent = hrp
-			flyStartTick = tick()
 		end
-		
 		local move = Vector3.new()
 		if UIS:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
 		if UIS:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
@@ -870,35 +977,21 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
 		if UIS:IsKeyDown(Enum.KeyCode.Space) then yVel = toggles.FlySpeed end
 		if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then yVel = -toggles.FlySpeed end
 		flyBodyVel.Velocity = Vector3.new(move.X * toggles.FlySpeed, yVel, move.Z * toggles.FlySpeed)
-		
-		-- Fly Bypass trigger every 2.5 seconds to reset anti-cheat
-		if tick() - flyStartTick > 2.5 then
-			local params = RaycastParams.new()
-			params.FilterDescendantsInstances = {char}
-			local hit = workspace:Raycast(hrp.Position, Vector3.new(0, -9000, 0), params)
-			if hit then
-				flyOriginalPos = hrp.CFrame
-				hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0, 3, 0))
-			end
-			flyStartTick = tick()
-		end
 	else
 		if flyBodyVel then flyBodyVel:Destroy(); flyBodyVel = nil end
 	end
-	
-	-- INF JUMP
-	if toggles.InfJump and UIS:IsKeyDown(Enum.KeyCode.Space) and hrp then
-		if tick() - lastInfJump > 0.3 and hrp.AssemblyLinearVelocity.Y < 10 then
-			hrp.Velocity = Vector3.new(hrp.Velocity.X, 40, hrp.Velocity.Z)
-			lastInfJump = tick()
-		end
-	end
 
 	-- SPEED
-	if toggles.Speed and hum and not toggles.Fly then
-		hum.WalkSpeed = toggles.SpeedValue
-	elseif hum and not toggles.Speed then
-		hum.WalkSpeed = 16
+	if toggles.Speed and hrp and hum and not toggles.Fly then
+		if hum.MoveDirection.Magnitude > 0 then
+			-- Calculate bonus speed based on 16 (default walk speed)
+			local bonusSpeed = toggles.SpeedValue - 16
+			if bonusSpeed > 0 then
+				-- Translate via CFrame instead of overwriting WalkSpeed.
+				-- This allows Sprinting, Gloops, and Potions to still work naturally!
+				hrp.CFrame = hrp.CFrame + (hum.MoveDirection * (bonusSpeed * dt))
+			end
+		end
 	end
 
 	-- WALL CLIMB
@@ -911,7 +1004,7 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
 	-- VOID JUMP
 	if toggles.VoidJump and hrp and hum then
 		if tick() - lastVoidJump > 0.6 then
-			if hum:GetState() == Enum.HumanoidStateType.Freefall and hrp.AssemblyLinearVelocity.Y < -15 then
+			if hum:GetState() == Enum.HumanoidStateType.Freefall and hrp.Velocity.Y < -15 then
 				local params = RaycastParams.new(); params.FilterDescendantsInstances = {char}; params.FilterType = Enum.RaycastFilterType.Exclude
 				local groundHit = workspace:Raycast(hrp.Position, Vector3.new(0, -15, 0), params)
 				if not groundHit then
@@ -980,25 +1073,160 @@ end))
 
 -- KIT RENDER LOOP
 local function updateRender()
-	kitScroll:ClearAllChildren(); local layout = Instance.new("UIListLayout", kitScroll); layout.Padding = UDim.new(0, 6)
+	if not kitScroll:FindFirstChild("UIListLayout") then
+		local layout = Instance.new("UIListLayout", kitScroll)
+		layout.Padding = UDim.new(0, 8)
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+	end
+	
+	-- Hide all existing elements to reuse them
+	for _, child in ipairs(kitScroll:GetChildren()) do
+		if child:IsA("GuiObject") then
+			child.Visible = false
+		end
+	end
+	
+	local layoutIndex = 0
 	for _, team in pairs(Teams:GetTeams()) do
 		local pList = team:GetPlayers()
+		
+		-- Filter out own team if setting is disabled
+		if not toggles.KitRenderOwnTeam and localPlayer.Team == team then
+			continue
+		end
+		
 		if #pList > 0 then
-			local h = Instance.new("TextButton", kitScroll); h.Size = UDim2.new(1, 0, 0, 28); h.BackgroundColor3 = Color3.fromRGB(35,35,35); h.Text = "  " .. team.Name:upper(); h.TextColor3 = team.TeamColor.Color; h.Font = Enum.Font.GothamBold; h.TextSize = 13; h.TextXAlignment = Enum.TextXAlignment.Left; addCorner(6, h)
-			local arrow = Instance.new("TextLabel", h); arrow.Size = UDim2.new(0, 30, 1, 0); arrow.Position = UDim2.new(1, -30, 0, 0); arrow.BackgroundTransparency = 1; arrow.Text = expandedTeams[team.Name] and "▼" or "▶"; arrow.TextColor3 = c_gold; arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 14
-			h.Activated:Connect(function() expandedTeams[team.Name] = not expandedTeams[team.Name]; updateRender() end)
+			layoutIndex = layoutIndex + 1
+			local headerId = "TeamHeader_" .. team.Name
+			local h = kitScroll:FindFirstChild(headerId)
+			
+			if not h then
+				h = Instance.new("TextButton", kitScroll)
+				h.Name = headerId
+				h.Size = UDim2.new(1, 0, 0, 28)
+				h.BackgroundColor3 = Color3.fromRGB(35,35,35)
+				h.Font = Enum.Font.GothamBold
+				h.TextSize = 13
+				h.TextXAlignment = Enum.TextXAlignment.Left
+				addCorner(6, h)
+				
+				local arrow = Instance.new("TextLabel", h)
+				arrow.Name = "Arrow"
+				arrow.Size = UDim2.new(0, 30, 1, 0)
+				arrow.Position = UDim2.new(1, -30, 0, 0)
+				arrow.BackgroundTransparency = 1
+				arrow.Font = Enum.Font.GothamBold
+				arrow.TextSize = 14
+				
+				h.Activated:Connect(function() 
+					expandedTeams[team.Name] = not expandedTeams[team.Name]
+					updateRender() 
+				end)
+			end
+			
+			h.Text = "  " .. team.Name:upper()
+			h.TextColor3 = team.TeamColor.Color
+			h.Arrow.Text = expandedTeams[team.Name] and "▼" or "▶"
+			h.Arrow.TextColor3 = c_gold
+			h.LayoutOrder = layoutIndex
+			h.Visible = true
+			
 			if expandedTeams[team.Name] then
 				for _, p in pairs(pList) do
-					local r = Instance.new("Frame", kitScroll); r.Size = UDim2.new(1, 0, 0, 45); r.BackgroundColor3 = Color3.fromRGB(22,22,22); addCorner(6, r)
-					local img = Instance.new("ImageLabel", r); img.Size = UDim2.new(0, 35, 0, 35); img.Position = UDim2.new(0, 5, 0.5, -17); img.BackgroundColor3 = Color3.fromRGB(30, 30, 30); img.Image = Players:GetUserThumbnailAsync(p.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48); addCorner(18, img)
-					local t = Instance.new("TextLabel", r); t.Size = UDim2.new(0.8, 0, 1, 0); t.Position = UDim2.new(0, 48, 0, 0); t.BackgroundTransparency = 1; t.TextColor3 = Color3.new(1,1,1); t.Font = Enum.Font.GothamBold; t.TextSize = 12; t.TextXAlignment = Enum.TextXAlignment.Left
-					local rK = tostring(p:GetAttribute("PlayingAsKits") or "None"):upper(); t.Text = p.DisplayName .. "\n" .. (kitTranslations[rK] or rK)
+					layoutIndex = layoutIndex + 1
+					local cardId = "PlayerCard_" .. p.UserId
+					local card = kitScroll:FindFirstChild(cardId)
+					
+					if not card then
+						card = Instance.new("Frame", kitScroll)
+						card.Name = cardId
+						card.Size = UDim2.new(0.95, 0, 0, 65)
+						card.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+						addCorner(8, card)
+						
+						local stroke = Instance.new("UIStroke", card)
+						stroke.Name = "Border"
+						stroke.Thickness = 1.5
+						stroke.Transparency = 0.3
+						
+						local img = Instance.new("ImageLabel", card)
+						img.Name = "Avatar"
+						img.Size = UDim2.new(0, 46, 0, 46)
+						img.Position = UDim2.new(0, 8, 0.5, -23)
+						img.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+						addCorner(24, img)
+						
+						local tName = Instance.new("TextLabel", card)
+						tName.Name = "PName"
+						tName.Size = UDim2.new(1, -70, 0.33, 0)
+						tName.Position = UDim2.new(0, 62, 0, 5)
+						tName.BackgroundTransparency = 1
+						tName.TextColor3 = Color3.new(1, 1, 1)
+						tName.Font = Enum.Font.GothamBold
+						tName.TextSize = 14
+						tName.TextXAlignment = Enum.TextXAlignment.Left
+						
+						local tKit = Instance.new("TextLabel", card)
+						tKit.Name = "PKit"
+						tKit.Size = UDim2.new(1, -70, 0.33, 0)
+						tKit.Position = UDim2.new(0, 62, 0.33, 1)
+						tKit.BackgroundTransparency = 1
+						tKit.Font = Enum.Font.GothamSemibold
+						tKit.TextSize = 12
+						tKit.TextXAlignment = Enum.TextXAlignment.Left
+						
+						local tClan = Instance.new("TextLabel", card)
+						tClan.Name = "PClan"
+						tClan.Size = UDim2.new(1, -70, 0.33, 0)
+						tClan.Position = UDim2.new(0, 62, 0.66, -1)
+						tClan.BackgroundTransparency = 1
+						tClan.Font = Enum.Font.Gotham
+						tClan.TextSize = 11
+						tClan.TextXAlignment = Enum.TextXAlignment.Left
+						tClan.RichText = true
+					end
+					
+					local rK = tostring(p:GetAttribute("PlayingAsKits") or "None"):upper()
+					local kitName = kitTranslations[rK] or rK
+					
+					local clanText = ""
+					pcall(function()
+						local tags = p:FindFirstChild("Tags")
+						if tags then
+							local zero = tags:FindFirstChild("0") or tags:FindFirstChild(0)
+							if zero then
+								clanText = tostring(zero.Value)
+							end
+						end
+					end)
+					
+					card.Border.Color = team.TeamColor.Color
+					card.PName.Text = p.DisplayName
+					card.PKit.Text = kitName
+					card.PKit.TextColor3 = team.TeamColor.Color
+					
+					if clanText and clanText ~= "" then
+						card.PClan.Text = "CLAN: " .. clanText
+						card.PClan.TextColor3 = Color3.new(1, 1, 1)
+					else
+						card.PClan.Text = "CLAN: NONE"
+						card.PClan.TextColor3 = Color3.fromRGB(130, 130, 130)
+					end
+					
+					-- Only fetch thumbnail if not already set
+					if card.Avatar.Image == "" then
+						pcall(function() card.Avatar.Image = Players:GetUserThumbnailAsync(p.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48) end)
+					end
+					
+					card.LayoutOrder = layoutIndex
+					card.Visible = true
 				end
 			end
 		end
 	end
 end
-task.spawn(function() while task.wait(0.5) do if toggles.KitRender and kitFrame.Visible then updateRender() end end end)
+task.spawn(function() while zenWareGUI.Parent and task.wait(0.5) do if toggles.KitRender and kitFrame.Visible then updateRender() end end end)
 
 -- KEYBINDS INPUT
 UIS.InputBegan:Connect(function(i, g)
@@ -1063,10 +1291,519 @@ end)
 
 -- ANTI-AFK
 localPlayer.Idled:Connect(function()
-	if toggles.AntiAFK then pcall(function() VirtualUser:aCaptureController(); VirtualUser:ClickButton2(Vector2.new()) end) end
+	if toggles.AntiAFK then pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end) end
+end)
+
+-- ==========================================
+-- FAST BREAK LOGIC (MOUSE/GRID BASED)
+-- ==========================================
+task.spawn(function()
+	local mouse = localPlayer:GetMouse()
+	while zenWareGUI.Parent do
+		task.wait(toggles.FastBreakTimer or 0.05)
+		local char = localPlayer.Character
+		local hum = char and char:FindFirstChild("Humanoid")
+		if toggles.FastBreak and char and hum and hum.Health > 0 and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+			local target = mouse.Target
+			if target and target:IsA("BasePart") and not target.Parent:FindFirstChild("Humanoid") then
+				
+				-- FIX: Only damage if holding a pickaxe/axe/shears to prevent placement glitches
+				local holdingMiningTool = false
+				if char then
+					for _, item in ipairs(char:GetChildren()) do
+						if item:IsA("Model") or item:IsA("Accessory") or item:IsA("Tool") then
+							local name = item.Name:lower()
+							if name:find("pickaxe") or name:find("axe") or name:find("shears") then
+								holdingMiningTool = true
+								break
+							end
+						end
+					end
+				end
+
+				if holdingMiningTool then
+					pcall(function()
+						local DamageBlock = ReplicatedStorage:FindFirstChild("rbxts_include")
+						if DamageBlock then
+							DamageBlock = DamageBlock.node_modules["@easy-games"]["block-engine"].node_modules["@rbxts"].net.out._NetManaged:FindFirstChild("DamageBlock")
+						end
+						
+						if DamageBlock then
+							-- Bedwars 3x3x3 Grid Calculation
+							local gridX = math.round(target.Position.X / 3)
+							local gridY = math.round(target.Position.Y / 3)
+							local gridZ = math.round(target.Position.Z / 3)
+							
+							local args = {
+								[1] = {
+									["blockRef"] = {
+										["blockPosition"] = Vector3.new(gridX, gridY, gridZ)
+									},
+									["hitPosition"] = mouse.Hit.Position,
+									["hitNormal"] = Vector3.new(0, 1, 0)
+								}
+							}
+							
+							task.spawn(function()
+								pcall(function() DamageBlock:InvokeServer(unpack(args)) end)
+							end)
+						end
+					end)
+				end
+			end
+		end
+	end
+end)
+
+-- ==========================================
+-- AUTO BUY ARMOR FEATURE
+-- ==========================================
+task.spawn(function()
+	local purchaseRemote = ReplicatedStorage:FindFirstChild("rbxts_include")
+	if purchaseRemote then purchaseRemote = purchaseRemote.node_modules:FindFirstChild("@rbxts") end
+	if purchaseRemote then purchaseRemote = purchaseRemote.net.out._NetManaged:FindFirstChild("BedwarsPurchaseItem") end
+	
+	local equipRemote = ReplicatedStorage:FindFirstChild("rbxts_include")
+	if equipRemote then equipRemote = equipRemote.node_modules:FindFirstChild("@rbxts") end
+	if equipRemote then equipRemote = equipRemote.net.out._NetManaged:FindFirstChild("SetArmorInvItem") end
+
+	while zenWareGUI.Parent do
+		task.wait(0.5)
+		local char = localPlayer.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChild("Humanoid")
+
+		if not toggles.AutoBuyArmor or not hrp or not hum or hum.Health <= 0 then continue end
+		
+		local nearShop = false
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("Model") and (v.Name:lower():find("itemshop") or v.Name:lower():find("merchant") or v:GetAttribute("ShopId") == "1_item_shop") then
+				local p = v.PrimaryPart or v:FindFirstChildWhichIsA("BasePart")
+				if p and (p.Position - hrp.Position).Magnitude < 30 then
+					nearShop = true
+					break
+				end
+			end
+		end
+		
+		if nearShop then
+			local inv = ReplicatedStorage:FindFirstChild("Inventories") and ReplicatedStorage.Inventories:FindFirstChild(localPlayer.Name)
+			if not inv then continue end
+			
+			local currentTier = 0
+			if inv:FindFirstChild("emerald_chestplate") or (char and char:FindFirstChild("emerald_chestplate")) then currentTier = 4
+			elseif inv:FindFirstChild("diamond_chestplate") or (char and char:FindFirstChild("diamond_chestplate")) then currentTier = 3
+			elseif inv:FindFirstChild("iron_chestplate") or (char and char:FindFirstChild("iron_chestplate")) then currentTier = 2
+			elseif inv:FindFirstChild("leather_chestplate") or (char and char:FindFirstChild("leather_chestplate")) then currentTier = 1
+			end
+
+			local buyArgs = nil
+			local prefix = ""
+
+			if currentTier == 0 then
+				prefix = "leather"
+				buyArgs = { { ["shopItem"] = { ["lockAfterPurchase"] = true, ["itemType"] = "leather_chestplate", ["price"] = 50, ["customDisplayName"] = "Leather Armor", ["superiorItems"] = { "iron_chestplate" }, ["currency"] = "iron", ["amount"] = 1, ["nextTier"] = "iron_chestplate", ["ignoredByKit"] = { "bigman", "tinker", "void_knight" }, ["spawnWithItems"] = { "leather_helmet", "leather_chestplate", "leather_boots" }, ["category"] = "Combat" }, ["shopId"] = "1_item_shop" } }
+			elseif currentTier == 1 then
+				prefix = "iron"
+				buyArgs = { { ["shopItem"] = { ["lockAfterPurchase"] = true, ["itemType"] = "iron_chestplate", ["price"] = 120, ["prevTier"] = "leather_chestplate", ["customDisplayName"] = "Iron Armor", ["currency"] = "iron", ["category"] = "Combat", ["amount"] = 1, ["tiered"] = true, ["nextTier"] = "diamond_chestplate", ["spawnWithItems"] = { "iron_helmet", "iron_chestplate", "iron_boots" }, ["ignoredByKit"] = { "bigman", "tinker", "void_knight" } }, ["shopId"] = "1_item_shop" } }
+			elseif currentTier == 2 then
+				prefix = "diamond"
+				buyArgs = { { ["shopItem"] = { ["lockAfterPurchase"] = true, ["itemType"] = "diamond_chestplate", ["price"] = 8, ["prevTier"] = "iron_chestplate", ["customDisplayName"] = "Diamond Armor", ["currency"] = "emerald", ["category"] = "Combat", ["amount"] = 1, ["tiered"] = true, ["nextTier"] = "emerald_chestplate", ["spawnWithItems"] = { "diamond_helmet", "diamond_chestplate", "diamond_boots" }, ["ignoredByKit"] = { "bigman", "tinker", "void_knight" } }, ["shopId"] = "1_item_shop" } }
+			elseif currentTier == 3 then
+				prefix = "emerald"
+				buyArgs = { { ["shopItem"] = { ["lockAfterPurchase"] = true, ["itemType"] = "emerald_chestplate", ["price"] = 40, ["prevTier"] = "diamond_chestplate", ["customDisplayName"] = "Emerald Armor", ["currency"] = "emerald", ["amount"] = 1, ["tiered"] = true, ["ignoredByKit"] = { "bigman", "tinker", "void_knight" }, ["spawnWithItems"] = { "emerald_helmet", "emerald_chestplate", "emerald_boots" }, ["category"] = "Combat" }, ["shopId"] = "1_item_shop" } }
+			end
+
+			if buyArgs and purchaseRemote then
+				local s = pcall(function() purchaseRemote:InvokeServer(unpack(buyArgs)) end)
+				if s and equipRemote then
+					task.wait(0.2)
+					local h = inv:FindFirstChild(prefix .. "_helmet")
+					local c = inv:FindFirstChild(prefix .. "_chestplate")
+					local b = inv:FindFirstChild(prefix .. "_boots")
+					if h then pcall(function() equipRemote:InvokeServer({ item = h, armorSlot = 0 }) end) end
+					if c then pcall(function() equipRemote:InvokeServer({ item = c, armorSlot = 1 }) end) end
+					if b then pcall(function() equipRemote:InvokeServer({ item = b, armorSlot = 2 }) end) end
+				end
+			end
+		end
+	end
+end)
+
+-- ==========================================
+-- NUKER LOGIC (PURE RAYCAST TARGETING & LOCK)
+-- ==========================================
+local cachedNukerBlocks = {}
+
+-- Setup the Highlight Instance for the Nuker
+local nukerHighlight = Instance.new("Highlight")
+nukerHighlight.Name = "NukerHighlight"
+nukerHighlight.FillColor = Color3.fromRGB(255, 50, 50)
+nukerHighlight.OutlineColor = Color3.fromRGB(255, 200, 0)
+nukerHighlight.FillTransparency = 0.5
+nukerHighlight.OutlineTransparency = 0.1
+nukerHighlight.Parent = zenWareGUI
+nukerHighlight.Enabled = false
+
+-- Cacher for Nuker (updates every 1 second to avoid lag spikes)
+task.spawn(function()
+	while zenWareGUI.Parent do
+		task.wait(1)
+		local blocks = {}
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("BasePart") then
+				local n = obj.Name:lower()
+				if n:find("bed") and not n:find("bedrock") then
+					table.insert(blocks, obj)
+				elseif n == "iron_ore_mesh_block" then
+					table.insert(blocks, obj)
+				end
+			end
+		end
+		cachedNukerBlocks = blocks
+	end
+end)
+
+-- Main Nuker Loop
+task.spawn(function()
+	local lockedNukerBlock = nil
+	local lockedRawTarget = nil
+
+	while zenWareGUI.Parent do
+		task.wait(toggles.NukerTimer or 0.1)
+		
+		local char = localPlayer.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChild("Humanoid")
+
+		if not toggles.Nuker or not char or not hrp or not hum or hum.Health <= 0 then 
+			nukerHighlight.Enabled = false
+			lockedNukerBlock = nil
+			lockedRawTarget = nil
+			continue 
+		end
+		
+		-- Check Specific Tool requirements
+		local holdingPickaxe = false
+		local holdingAxe = false
+		local holdingShears = false
+		
+		if char then
+			for _, item in ipairs(char:GetChildren()) do
+				if item:IsA("Model") or item:IsA("Accessory") or item:IsA("Tool") then
+					local name = item.Name:lower()
+					if name:find("pickaxe") then holdingPickaxe = true end
+					if name:find("axe") and not name:find("pickaxe") then holdingAxe = true end
+					if name:find("shears") then holdingShears = true end
+				end
+			end
+		end
+
+		local requiresTool = toggles.NukerReqPickaxe or toggles.NukerReqAxe or toggles.NukerReqShears
+		if requiresTool then
+			local hasRequired = false
+			if toggles.NukerReqPickaxe and holdingPickaxe then hasRequired = true end
+			if toggles.NukerReqAxe and holdingAxe then hasRequired = true end
+			if toggles.NukerReqShears and holdingShears then hasRequired = true end
+			if not hasRequired then 
+				nukerHighlight.Enabled = false
+				continue 
+			end
+		end
+
+		-- VALIDATE LOCKED TARGET (Nuker won't randomly switch blocks anymore!)
+		if lockedNukerBlock then
+			if not lockedNukerBlock:IsDescendantOf(workspace) or not lockedNukerBlock.CanCollide or lockedNukerBlock.Transparency >= 1 or not hrp or (lockedNukerBlock.Position - hrp.Position).Magnitude > 32 then
+				lockedNukerBlock = nil
+				lockedRawTarget = nil
+			end
+		end
+		
+		if not lockedNukerBlock then
+			local closestBed = nil
+			local closestBedDist = 30
+			local closestOre = nil
+			local closestOreDist = 30
+			
+			for _, obj in ipairs(cachedNukerBlocks) do
+				if obj and obj.Parent then
+					local n = obj.Name:lower()
+					local dist = (obj.Position - hrp.Position).Magnitude
+					
+					if toggles.NukerBed and n:find("bed") and not n:find("bedrock") then
+						-- COLOR & ATTRIBUTE BASED BED PROTECTION
+						local isMyBed = false
+						local myTeam = localPlayer.Team
+						
+						if myTeam then
+							local myColor = myTeam.TeamColor.Color
+							local myTeamName = myTeam.Name:lower():gsub(" team", "")
+							local shortTeam = myTeamName ~= "" and string.split(myTeamName, " ")[1] or ""
+							
+							-- 1. Name verification
+							if shortTeam ~= "" and (n:find(shortTeam) or (obj.Parent and obj.Parent.Name:lower():find(shortTeam))) then 
+								isMyBed = true 
+							end
+							
+							-- 2. Direct Color Verification (Checks bed parts)
+							if not isMyBed then
+								local function checkColor(part)
+									if part:IsA("BasePart") then
+										local pColor = part.Color
+										local diff = math.abs(pColor.R - myColor.R) + math.abs(pColor.G - myColor.G) + math.abs(pColor.B - myColor.B)
+										if diff < 0.1 then return true end
+									end
+									return false
+								end
+								
+								if checkColor(obj) then isMyBed = true end
+								
+								if not isMyBed and obj.Parent and obj.Parent.Name:lower():find("bed") then
+									for _, p in ipairs(obj.Parent:GetChildren()) do
+										if checkColor(p) then
+											isMyBed = true
+											break
+										end
+									end
+								end
+							end
+							
+							-- 3. Attribute verification hierarchy
+							local myTeamId1 = localPlayer:GetAttribute("Team")
+							local myTeamId2 = localPlayer:GetAttribute("TeamId")
+							
+							local curr = obj
+							while curr and curr ~= workspace and not isMyBed do
+								local cId1 = curr:GetAttribute("Team")
+								local cId2 = curr:GetAttribute("TeamId")
+								
+								if (myTeamId1 ~= nil and cId1 ~= nil and tostring(cId1) == tostring(myTeamId1)) or 
+								   (myTeamId2 ~= nil and cId2 ~= nil and tostring(cId2) == tostring(myTeamId2)) then
+									isMyBed = true
+									break
+								end
+								curr = curr.Parent
+							end
+						end
+						
+						if not isMyBed and dist < closestBedDist then
+							closestBedDist = dist
+							closestBed = obj
+						end
+						
+					elseif toggles.NukerOre and n == "iron_ore_mesh_block" then
+						if dist < closestOreDist then
+							closestOreDist = dist
+							closestOre = obj
+						end
+					end
+				end
+			end
+			
+			-- Priority System
+			local rawTarget = nil
+			if toggles.NukerPriority == "Bed" then
+				rawTarget = closestBed or closestOre
+			elseif toggles.NukerPriority == "Ore" then
+				rawTarget = closestOre or closestBed
+			else -- Distance
+				if closestBed and closestOre then
+					if closestBedDist < closestOreDist then
+						rawTarget = closestBed
+					else
+						rawTarget = closestOre
+					end
+				else
+					rawTarget = closestBed or closestOre
+				end
+			end
+			
+			if rawTarget then
+				local exposed = false
+				local closestProtector = nil
+				
+				-- Prepare True Line-of-Sight Raycast
+				local params = RaycastParams.new()
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				
+				local excludeList = {char}
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p.Character then table.insert(excludeList, p.Character) end
+				end
+				if workspace:FindFirstChild("ItemDrops") then table.insert(excludeList, workspace.ItemDrops) end
+				params.FilterDescendantsInstances = excludeList
+				
+				-- Target parts to check raycast against
+				local partsToCheck = {}
+				if rawTarget == closestBed and rawTarget.Parent and rawTarget.Parent.Name:lower():find("bed") then
+					for _, p in ipairs(rawTarget.Parent:GetChildren()) do
+						if p:IsA("BasePart") then table.insert(partsToCheck, p) end
+					end
+				else
+					table.insert(partsToCheck, rawTarget)
+				end
+				
+				local cPDist = math.huge
+				-- Shoots raycasts from Camera, Chest, Head, and both sides to guarantee it finds 1-block openings!
+				local startPositions = {
+					cam.CFrame.Position, 
+					hrp.Position, 
+					hrp.Position + Vector3.new(0, 1.5, 0),
+					hrp.Position + Vector3.new(1.2, 0, 0),
+					hrp.Position + Vector3.new(-1.2, 0, 0)
+				}
+				
+				for _, part in ipairs(partsToCheck) do
+					for _, startPos in ipairs(startPositions) do
+						local dir = part.Position - startPos
+						local hit = workspace:Raycast(startPos, dir.Unit * (dir.Magnitude + 2), params)
+						
+						if hit and hit.Instance then
+							local hName = hit.Instance.Name:lower()
+							-- Check if the raycast cleanly hit the actual target directly
+							local isTarget = (hit.Instance == part) or (hit.Instance == rawTarget) or (hit.Instance.Parent and hit.Instance.Parent == rawTarget.Parent) or hName:find("bed") or hName == "iron_ore_mesh_block"
+							
+							if isTarget then
+								exposed = true
+								break
+							else
+								-- The raycast hit a protective wall! Ensure we only target solid blocks
+								if hit.Instance.CanCollide then
+									local hitDist = (hit.Position - startPos).Magnitude
+									if hitDist < cPDist then
+										cPDist = hitDist
+										closestProtector = hit.Instance
+									end
+								end
+							end
+						else
+							exposed = true
+							break
+						end
+					end
+					if exposed then break end
+				end
+				
+				lockedRawTarget = rawTarget
+				lockedNukerBlock = (not exposed and closestProtector) and closestProtector or rawTarget
+			end
+		end
+		
+		if lockedNukerBlock then
+			if toggles.NukerHighlight then
+				nukerHighlight.Adornee = lockedNukerBlock
+				nukerHighlight.Enabled = true
+			else
+				nukerHighlight.Enabled = false
+			end
+			
+			local DamageBlock = ReplicatedStorage:FindFirstChild("rbxts_include")
+			if DamageBlock then
+				DamageBlock = DamageBlock.node_modules["@easy-games"]["block-engine"].node_modules["@rbxts"].net.out._NetManaged:FindFirstChild("DamageBlock")
+			end
+			
+			if DamageBlock then
+				local function smash(targetPart)
+					if not targetPart then return end
+					local gridX = math.round(targetPart.Position.X / 3)
+					local gridY = math.round(targetPart.Position.Y / 3)
+					local gridZ = math.round(targetPart.Position.Z / 3)
+					
+					local args = {
+						[1] = {
+							["blockRef"] = {
+								["blockPosition"] = Vector3.new(gridX, gridY, gridZ)
+							},
+							["hitPosition"] = targetPart.Position,
+							["hitNormal"] = Vector3.new(0, 1, 0)
+						}
+					}
+					
+					task.spawn(function()
+						pcall(function() DamageBlock:InvokeServer(unpack(args)) end)
+					end)
+				end
+				
+				-- Pure Outer-Block execution
+				smash(lockedNukerBlock)
+				if lockedRawTarget and lockedRawTarget ~= lockedNukerBlock then
+					smash(lockedRawTarget)
+				end
+			end
+		else
+			nukerHighlight.Enabled = false
+		end
+	end
+end)
+
+-- ==========================================
+-- EXTENDED RESOURCE PICKUP
+-- ==========================================
+task.spawn(function()
+	while zenWareGUI.Parent do
+		task.wait(0.1)
+		local char = localPlayer.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChild("Humanoid")
+
+		if toggles.ExtendedDrop and hrp and hum and hum.Health > 0 then
+			local itemDrops = workspace:FindFirstChild("ItemDrops")
+			if itemDrops then
+				local pickupRemote = ReplicatedStorage.rbxts_include.node_modules:FindFirstChild("@rbxts")
+				if pickupRemote then pickupRemote = pickupRemote.net.out._NetManaged:FindFirstChild("PickupItemDrop") end
+				
+				if pickupRemote then
+					local myPos = hrp.Position
+					local range = toggles.ExtendedDropRange or 25
+					for _, drop in ipairs(itemDrops:GetChildren()) do
+						if drop:IsA("BasePart") or drop:IsA("Model") then
+							local posPart = drop:IsA("BasePart") and drop or drop.PrimaryPart or drop:FindFirstChildWhichIsA("BasePart")
+							if posPart then
+								if (posPart.Position - myPos).Magnitude <= range then
+									task.spawn(function()
+										pcall(function()
+											pickupRemote:InvokeServer({
+												["itemDrop"] = drop
+											})
+										end)
+									end)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+-- ==========================================
+-- FAST DROP HOOK
+-- ==========================================
+pcall(function()
+	local oldNamecall
+	oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+		local method = getnamecallmethod()
+		if getgenv()._fastDropping then return oldNamecall(self, ...) end
+
+		if toggles.FastDrop and method == "InvokeServer" and tostring(self) == "DropItem" then
+			local args = {...}
+			task.spawn(function()
+				getgenv()._fastDropping = true
+				local dropMult = math.floor(toggles.FastDropSpeed or 5)
+				-- the original fire handles the first drop, so loop dropMult-1 times
+				for i = 1, dropMult - 1 do
+					pcall(function() self:InvokeServer(unpack(args)) end)
+					task.wait(0.01)
+				end
+				getgenv()._fastDropping = false
+			end)
+		end
+		return oldNamecall(self, ...)
+	end)
 end)
 
 loadConfig()
 -- Fixed initialization so both toggles AND visual hotkeys load instantly on screen
-for id, fn in pairs(uiVisuals) do fn() end
+for id, fn in pairs(uiVisuals) do if not id:find("_key") then fn() end end
 handleStaffScan()
