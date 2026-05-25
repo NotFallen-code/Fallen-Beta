@@ -13,6 +13,7 @@ local camera = Workspace.CurrentCamera
 -- CONFIGURATION & CACHING
 -- ==========================================
 local currentHotkey = Enum.KeyCode.F4
+local VISIBILITY_HOTKEY = Enum.KeyCode.RightShift -- Keybind to toggle panel visibility
 
 local ALLOWED_WEAPONS = {
 	["wood_sword"] = true, ["stone_sword"] = true, ["iron_sword"] = true,
@@ -70,6 +71,7 @@ local mainFrame = createUI("Frame", {
 	Size = UDim2.new(0, 300, 0, 630),
 	Position = UDim2.new(0.85, -50, 0.5, -315),
 	BackgroundColor3 = Color3.fromRGB(30, 30, 35),
+	Active = true, -- Crucial for drag interactions
 	Parent = screenGui
 })
 
@@ -165,6 +167,35 @@ createSlider("Pushback Reach (Studs)", 9)
 local destroyBtn = createUI("TextButton", {Size = UDim2.new(0.9, 0, 0, 35), Text = "DESTROY PANEL", Font = Enum.Font.GothamBlack, TextSize = 14, BackgroundColor3 = Color3.fromRGB(150, 30, 30), TextColor3 = Color3.new(1, 1, 1), LayoutOrder = 10, Parent = mainFrame})
 
 -- ==========================================
+-- CUSTOM DRAGGING FUNCTION
+-- ==========================================
+local dragToggle, dragStart, startPos
+local function updateDragInput(input)
+	local delta = input.Position - dragStart
+	mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+table.insert(connections, mainFrame.InputBegan:Connect(function(input)
+	if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+		dragToggle = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+		
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragToggle = false
+			end
+		end)
+	end
+end))
+
+table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+	if dragToggle and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		updateDragInput(input)
+	end
+end))
+
+-- ==========================================
 -- TARGET VALIDATION LOGIC
 -- ==========================================
 local function getEquippedWeaponName()
@@ -177,11 +208,6 @@ local function getEquippedWeaponName()
 		end
 	end
 	return nil
-end
-
-local function isDummy(model)
-	local name = string.lower(model.Name)
-	return string.find(name, "dummy") or string.find(name, "dummie")
 end
 
 local function scanForTargets()
@@ -200,24 +226,16 @@ local function scanForTargets()
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	
-	-- Scan all models in Workspace to support both Players and Dummies
-	for _, targetObj in ipairs(Workspace:GetDescendants()) do
-		if targetObj == char or not targetObj:IsA("Model") then continue end
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer == player then continue end
+		if targetPlayer.Team == player.Team and player.Team ~= nil then continue end
+		if targetPlayer.Team and targetPlayer.Team.Name == "Spectator" then continue end
 		
-		local targetPlayer = Players:GetPlayerFromCharacter(targetObj)
+		local targetChar = targetPlayer.Character
+		if not targetChar or targetChar.Parent ~= Workspace then continue end
 		
-		if targetPlayer then
-			-- It's a Player: Run Team & Spectator checks
-			if targetPlayer == player then continue end
-			if targetPlayer.Team == player.Team and player.Team ~= nil then continue end
-			if targetPlayer.Team and targetPlayer.Team.Name == "Spectator" then continue end
-		else
-			-- It's an NPC: Only allow it if the name contains "Dummy"
-			if not isDummy(targetObj) then continue end
-		end
-		
-		local hum = targetObj:FindFirstChild("Humanoid")
-		local targetRoot = targetObj:FindFirstChild("HumanoidRootPart")
+		local hum = targetChar:FindFirstChild("Humanoid")
+		local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
 		if not hum or not targetRoot or hum.Health <= 0 then continue end
 		
 		local toTarget = targetRoot.Position - root.Position
@@ -234,14 +252,14 @@ local function scanForTargets()
 			local rayOrigin = root.Position + Vector3.new(0, 1, 0)
 			local rayTarget = targetRoot.Position + Vector3.new(0, 1, 0)
 			
-			raycastParams.FilterDescendantsInstances = {char, targetObj}
+			raycastParams.FilterDescendantsInstances = {char, targetChar}
 			local rayResult = Workspace:Raycast(rayOrigin, rayTarget - rayOrigin, raycastParams)
 			if rayResult and rayResult.Instance.CanCollide and rayResult.Instance.Transparency < 1 then 
 				continue 
 			end 
 		end
 		
-		table.insert(validTargets, { model = targetObj, root = targetRoot, distance = dist })
+		table.insert(validTargets, { model = targetChar, root = targetRoot, distance = dist })
 	end
 	
 	table.sort(validTargets, function(a, b) return a.distance < b.distance end)
@@ -334,6 +352,12 @@ table.insert(connections, hotkeyBtn.MouseButton1Click:Connect(function()
 end))
 
 table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	-- VISIBILITY TOGGLE: Right Shift logic handles completely hidden/shown states
+	if input.KeyCode == VISIBILITY_HOTKEY then
+		mainFrame.Visible = not mainFrame.Visible
+		return
+	end
+
 	if isBindingHotkey and input.UserInputType == Enum.UserInputType.Keyboard then
 		currentHotkey = input.KeyCode
 		hotkeyBtn.Text = "[" .. currentHotkey.Name .. "] Change Hotkey"
@@ -364,7 +388,9 @@ table.insert(connections, UserInputService.InputEnded:Connect(function(input)
 	end
 end))
 
--- Background Loop Setup
+-- ==========================================
+-- MAIN RUN LOOP
+-- ==========================================
 local mainLoop = RunService.Heartbeat:Connect(function()
 	currentValidTargets = scanForTargets()
 	
