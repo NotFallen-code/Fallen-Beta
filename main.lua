@@ -35,6 +35,8 @@ local currentKaTarget = nil
 local hitting = nil
 local lastHit = nil
 
+local whiteHits = false
+
 local findTargetStuds = 100
 
 local autoShoot = false
@@ -1010,6 +1012,8 @@ local AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
 AutoSprint:CreateToggle("Bypass all items")
 AutoSprint:CreateToggle("Don't auto sprint on gloops")
 
+local WhiteHits = Visuals:CreateButton("White Hits", nil, true)
+
 
 local function isInFOV(myHRP, targetHRP, maxAngle)
 	local forward = myHRP.CFrame.LookVector
@@ -1064,7 +1068,7 @@ Killaura.Callbacks.OnToggle = function(state)
 
 			local hitDelay = Killaura.Values["Hit Delay"]
 			
-			if hitDelay and hitDelay <= 0.01 then
+			if hitDelay and hitDelay <= 0.1 then
 				RunService.Heartbeat:Wait(hitDelay)
 			else
 				task.wait(hitDelay)
@@ -1641,5 +1645,26 @@ RunService.Heartbeat:Connect(function()
 		end
 		
 		  
+	end
+end)
+
+
+WhiteHits.Callbacks.OnToggle = function(state)
+	whiteHits = state
+end
+
+RunService.Heartbeat:Connect(function()
+	if not whiteHits then return end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character 
+
+		if character then
+			local highlight = character:FindFirstChild("_DamageHighlight_")
+
+			if highlight and highlight.Enabled then
+				highlight.Enabled = false
+			end
+		end
 	end
 end)
