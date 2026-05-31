@@ -53,6 +53,12 @@ local DIRECTION_MODES = {
 	["Up"] = "Up"
 }
 
+local bows = {
+	"wood_bow",
+	"wood_crossbow",
+	"headhunter"
+}
+
 local startTime = 0
 local lastClickTime = 0
 local clicking = false
@@ -572,9 +578,22 @@ local function injectElements(mod, settingsCont)
 		end)
 	end
 
-	function mod:CreateDropdown(dName, options, default, dCallback)
+	function mod:CreateDropdown(dName, options, default, dCallback, multiSelect)
+		-- Default multiSelect to false if not provided
+		multiSelect = multiSelect or false
 
-		mod.Values[dName] = default
+		-- Setup the internal value storage
+		if multiSelect then
+			-- If multi-select is enabled, the stored value becomes a table
+			if type(default) == "table" then
+				mod.Values[dName] = {}
+				for _, v in ipairs(default) do table.insert(mod.Values[dName], v) end
+			else
+				mod.Values[dName] = default and {default} or {}
+			end
+		else
+			mod.Values[dName] = default
+		end
 
 		local dropCont = Instance.new("Frame", settingsCont)
 		dropCont.BackgroundTransparency = 1
@@ -586,12 +605,10 @@ local function injectElements(mod, settingsCont)
 		local dBtn = Instance.new("TextButton", dropCont)
 		dBtn.Size = UDim2.new(1, 0, 0, 28)
 		dBtn.BackgroundTransparency = 1
-		dBtn.Text = "      - " .. dName .. ": " .. tostring(default)
 		dBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
 		dBtn.TextXAlignment = Enum.TextXAlignment.Left
 		dBtn.TextSize = 20
 		dBtn.FontFace = Font.fromName(textFont)
-		
 		dBtn.LayoutOrder = 1
 
 		local optFrame = Instance.new("Frame", dropCont)
@@ -599,41 +616,90 @@ local function injectElements(mod, settingsCont)
 		optFrame.AutomaticSize = Enum.AutomaticSize.Y
 		optFrame.Size = UDim2.new(1, 0, 0, 0)
 		optFrame.Visible = false
-		
 		optFrame.LayoutOrder = 2
-		
-		local oLayout = Instance.new("UIListLayout", optFrame)
-		
 
-		dBtn.MouseButton1Click:Connect(function() optFrame.Visible = not optFrame.Visible end)
+		local oLayout = Instance.new("UIListLayout", optFrame)
+
+		dBtn.MouseButton1Click:Connect(function() 
+			optFrame.Visible = not optFrame.Visible 
+		end)
+
+		-- Helper function to update the main button text dynamically
+		local function updateDropdownText()
+			if multiSelect then
+				local count = #mod.Values[dName]
+				if count == 0 then
+					dBtn.Text = "      - " .. dName .. ": None"
+				elseif count == 1 then
+					dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName][1])
+				else
+					dBtn.Text = "      - " .. dName .. ": [" .. count .. " Selected]"
+				end
+			else
+				dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName])
+			end
+		end
+
+		updateDropdownText() -- Initialize text
 
 		for _, opt in ipairs(options) do
 			local oBtn = Instance.new("TextButton", optFrame)
 			oBtn.Size = UDim2.new(1, 0, 0, 24)
-			oBtn.Text = "         > " .. tostring(opt)
 			oBtn.BackgroundTransparency = 1
 			oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
 			oBtn.TextXAlignment = Enum.TextXAlignment.Left
 			oBtn.TextSize = 18
 			oBtn.FontFace = Font.fromName(textFont)
 
-			oBtn.MouseEnter:Connect(function() tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) end)
-			oBtn.MouseLeave:Connect(function() tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) end)
+			-- Helper function to update the option's visual state
+			local function updateVisual()
+				if multiSelect then
+					local isSelected = table.find(mod.Values[dName], opt)
+					oBtn.Text = (isSelected and "         > [x] " or "         > [ ] ") .. tostring(opt)
+					oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
+				else
+					oBtn.Text = "         > " .. tostring(opt)
+				end
+			end
+
+			updateVisual() -- Initialize visual state
+
+			-- Hover effects (Modified to respect active multi-select options)
+			oBtn.MouseEnter:Connect(function() 
+				tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
+			end)
+
+			oBtn.MouseLeave:Connect(function() 
+				if multiSelect and table.find(mod.Values[dName], opt) then return end
+				tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
+			end)
 
 			oBtn.MouseButton1Click:Connect(function()
-				dBtn.Text = "      - " .. dName .. ": " .. opt
-				optFrame.Visible = false
-				-- Save selected option
-				mod.Values[dName] = opt
+				if multiSelect then
+					-- Toggle logic for multi-select
+					local foundIdx = table.find(mod.Values[dName], opt)
 
-				-- User callback
-				if dCallback then
-					dCallback(opt)
-				end
+					if foundIdx then
+						table.remove(mod.Values[dName], foundIdx) -- Deselect
+					else
+						table.insert(mod.Values[dName], opt) -- Select
+					end
 
-				-- Internal callback
-				if mod.Callbacks.OnValueChanged then
-					mod.Callbacks.OnValueChanged(dName, opt)
+					updateVisual()
+					updateDropdownText()
+
+					-- Send the entire table of selected options through the callback
+					if dCallback then dCallback(mod.Values[dName]) end
+					if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
+				else
+					-- Standard logic for single-select
+					optFrame.Visible = false
+					mod.Values[dName] = opt
+
+					updateDropdownText()
+
+					if dCallback then dCallback(opt) end
+					if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
 				end
 			end)
 		end
@@ -744,7 +810,7 @@ function FW:CreateCategory(name)
 	catBtn.TextXAlignment = Enum.TextXAlignment.Left
 	catBtn.BorderSizePixel = 0
 	catBtn.LayoutOrder = lastSort
-	
+
 	lastSort += 1
 
 	catBtn.MouseEnter:Connect(function() tween(catBtn, {BackgroundTransparency = 0}) end)
@@ -832,7 +898,7 @@ function FW:CreateCategory(name)
 		btn.TextXAlignment = Enum.TextXAlignment.Left
 		btn.BorderSizePixel = 0
 		btn.LayoutOrder = 1
-		
+
 
 		btn.MouseEnter:Connect(function() tween(btn, {BackgroundTransparency = 0}) end)
 		btn.MouseLeave:Connect(function() tween(btn, {BackgroundTransparency = 1}) end)
@@ -890,20 +956,20 @@ function FW:CreateCategory(name)
 		settingsCont.AutomaticSize = Enum.AutomaticSize.Y
 		settingsCont.LayoutOrder = 2
 		local sLayout = Instance.new("UIListLayout", settingsCont)
-	    sLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		sLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 		btn.MouseButton1Click:Connect(function()
 
-			
+
 			mod.Toggled = not mod.Toggled
 
-			
+
 			btn.TextColor3 =
 				mod.Toggled
 				and Color3.fromRGB(78, 173, 73)
 				or Color3.new(1, 1, 1)
 
-	
+
 			if callback then
 				callback(mod.Toggled)
 			end
@@ -995,19 +1061,17 @@ AutoClicker:CreateToggle("Require Mouse Held", true, nil)
 local Reach = Combat:CreateButton("Reach", nil, true)
 
 local AutoShoot = Combat:CreateButton("AutoShoot", nil, true)
+AutoShoot:CreateSlider("Range", 1, 1000, 50)
 AutoShoot:CreateToggle("Target Players", true, nil)
 AutoShoot:CreateToggle("Target NPCs/Dummies", false, nil)
-AutoShoot:CreateSlider("Range", 1, 100, 50)
-AutoShoot:CreateSlider("Chance of headshot", 1, 100, 100, nil)
-AutoShoot:CreateSlider("Chance of shot", 1, 100, 100, nil)
 AutoShoot:CreateToggle("Aim at Head", false, nil)
 AutoShoot:CreateToggle("Aim at Torso", true, nil)
+AutoShoot:CreateSlider("Chance of headshot", 1, 100, 100, nil)
+AutoShoot:CreateSlider("Chance of shot", 1, 100, 100, nil)
 AutoShoot:CreateToggle("Randomize headshots & shots", false, nil)
 AutoShoot:CreateSlider("Randomization", 1, 100, 50, nil)
-AutoShoot:CreateToggle("Arrow", true, nil)
-AutoShoot:CreateToggle("Snowball", false, nil)
+AutoShoot:CreateDropdown("Projectiles", {"arrow", "snowball", "mage_spell_base"}, "arrow", nil, true)
 AutoShoot:CreateSlider("Shoot duration", 0.01, 2, 0.4)
-
 local AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
 AutoSprint:CreateToggle("Bypass all items")
 AutoSprint:CreateToggle("Don't auto sprint on gloops")
@@ -1029,17 +1093,17 @@ end
 local function faceTarget(characterA, characterB)
 	local hrpA = characterA:FindFirstChild("HumanoidRootPart")
 	local hrpB = characterB:FindFirstChild("HumanoidRootPart")
-	
+
 	characterA.Humanoid.AutoRotate = false
 
-	
+
 	if hrpA and hrpB then
 
 		local lookPosition = Vector3.new(hrpB.Position.X, hrpA.Position.Y, hrpB.Position.Z)
 
-	
+
 		hrpA.CFrame = CFrame.lookAt(hrpA.Position, lookPosition)
-		
+
 		characterA.Humanoid.AutoRotate = true
 	end
 end
@@ -1067,7 +1131,7 @@ Killaura.Callbacks.OnToggle = function(state)
 		while Killaura.Toggled do
 
 			local hitDelay = Killaura.Values["Hit Delay"]
-			
+
 			if hitDelay and hitDelay <= 0.1 then
 				RunService.Heartbeat:Wait(hitDelay)
 			else
@@ -1169,7 +1233,7 @@ Killaura.Callbacks.OnToggle = function(state)
 				local inventoryWeapon = nil
 				local swordName = nil
 				local oldItem = tostring(handItem.Value)
-				
+
 				if oldItem == nil then
 					oldItem = "hand"
 				end
@@ -1180,7 +1244,7 @@ Killaura.Callbacks.OnToggle = function(state)
 					if not inventoryWeapon then continue end
 				else
 					swordName = tostring(getBestEquippedSword(Player.Name))
-					
+
 					inventoryWeapon = game.ReplicatedStorage:FindFirstChild("Inventories"):FindFirstChild(Player.Name):FindFirstChild(swordName)
 					print(swordName,inventoryWeapon)
 					if not inventoryWeapon then continue end
@@ -1264,7 +1328,7 @@ Killaura.Callbacks.OnToggle = function(state)
 				-- 5. Auto-Unequip best sword back to original item
 				if Killaura.Values["Require Sword Equipped"] == false and oldItem ~= swordName then
 					if oldItem == nil then
-						
+
 					end
 					local oldWeaponInst = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):WaitForChild(Player.Name):WaitForChild(oldItem)
 					local args = {{ hand = oldWeaponInst }}
@@ -1316,13 +1380,13 @@ UserInputService.InputEnded:Connect(function(input, GPE)
 				task.cancel(resetTask) 
 			end
 
-	
+
 			resetTask = task.delay(maxClickInterval, function()
 				clicking = false
 			end)
 
 		else
-			
+
 			clicking = false
 		end
 	end
@@ -1330,7 +1394,7 @@ end)
 
 Player.CharacterAdded:Connect(function(character)
 	if Killaura.Toggled == true and Killaura.Values["Equip Sword Upon Death"] == true then
-		
+
 	end
 end)
 
@@ -1390,14 +1454,14 @@ AimAssist.Callbacks.OnToggle = function(state)
 					return 
 				end
 			end
-			
+
 
 
 			if AimAssist.Values["Require Sword Equipped"] == true then
 				if handItem and table.find(swords, tostring(handItem.Value)) then
 					if AimAssist.Values["Face Target"] == true then faceTarget(char, currentTarget) end
 					camera.CFrame = camera.CFrame:Lerp(goalCFrame, getAlpha())
-					
+
 				else
 					return 
 				end
@@ -1405,8 +1469,8 @@ AimAssist.Callbacks.OnToggle = function(state)
 				if AimAssist.Values["Face Target"] == true then faceTarget(char, currentTarget) end
 				camera.CFrame = camera.CFrame:Lerp(goalCFrame, getAlpha())
 			end
-			end
-		end)
+		end
+	end)
 
 	task.spawn(function()
 		while AimAssist.Toggled do
@@ -1448,14 +1512,14 @@ AimAssist.Callbacks.OnToggle = function(state)
 				for _, npc in pairs(workspace:GetChildren()) do
 					if npc:IsA("Model") and npc:FindFirstChild("Humanoid", true) then
 						if Players:FindFirstChild(npc.Name) then continue end
-							local HRP = npc.PrimaryPart
-							if HRP then
-								local distance = (HRP.Position - myHRP.Position).Magnitude
+						local HRP = npc.PrimaryPart
+						if HRP then
+							local distance = (HRP.Position - myHRP.Position).Magnitude
 
-								if distance <= AimAssist.Values["Range"] then
-									print("a")
-									dummyTarget = npc
-								
+							if distance <= AimAssist.Values["Range"] then
+								print("a")
+								dummyTarget = npc
+
 							end
 						end
 					end
@@ -1469,7 +1533,7 @@ AimAssist.Callbacks.OnToggle = function(state)
 			elseif priority == "NPC/Dummy" then
 				bestTarget = dummyTarget or playerTarget
 			end
-			
+
 			if AimAssist.Values["Sync with KA Target"] == true then
 				local kaTarget = currentKaTarget 
 
@@ -1514,7 +1578,9 @@ local isSystemEnabled = false
 Velocity.Callbacks.OnToggle = function(state) isSystemEnabled = state end
 local lastVelocity = Vector3.zero
 
-AutoShoot.Callbacks.OnToggle = function(state) autoShoot = state end
+AutoShoot.Callbacks.OnToggle = function(state)
+	autoShoot = state 
+end
 
 local function generateId()
 	local characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -1526,24 +1592,45 @@ local function generateId()
 	return id
 end
 
-local function fireProjectile(projectileName)
+local function fireProjectile(projectileName, HRP, targetPart, itemRequired, target)
+
+	local origin = HRP.Position + Vector3.new(0, 2, 0)
+	if not targetPart then return end
+
+	local targetPos = targetPart.Position
+	local direction = (targetPos - origin).Unit
+
+	local speed = 240
+	local thirdPos = direction * speed
+
+	local ID = 0
+	ID = generateId()
+
 	local args = {
-		inventoriesFolder:FindFirstChild(Player.Name):FindFirstChild(tostring(projectileName)),
+		inventoriesFolder:FindFirstChild(Player.Name):FindFirstChild(tostring(itemRequired or projectileName)),
 		tostring(projectileName),
 		tostring(projectileName),
-		vector.create(283.30645751953125, 81.4999771118164, 373.4439392089844),
-		vector.create(283.30645751953125, 79.4999771118164, 373.4439392089844),
-		vector.create(11.137795448303223, -16.100664138793945, 239.20016479492188),
-		generateId(), 
+		vector.create(origin.X, origin.Y, origin.Z),
+		vector.create(HRP.Position.X, HRP.Position.Y, HRP.Position.Z),
+		vector.create(thirdPos.X, thirdPos.Y, thirdPos.Z),
+		generateId(),
 		{
-			shotId = generateId(), 
+			shotId = ID,
 			drawDurationSec = AutoShoot.Values["Shoot duration"]
 		},
-		workspace:GetServerTimeNow() 
+		workspace:GetServerTimeNow()
 	}
 
 	fireProjectileEvent:InvokeServer(unpack(args))
+
+	local args = {
+		tostring(ID),
+		workspace:WaitForChild(target.Name)
+	}
+	game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("ProjectileHit"):FireServer(unpack(args))
+	print("done both")
 end
+
 
 RunService.Heartbeat:Connect(function()
 	if not isSystemEnabled or not Player.Character then return end
@@ -1608,46 +1695,161 @@ RunService.Heartbeat:Connect(function()
 	lastVelocity = HRP.AssemblyLinearVelocity
 end)
 
-RunService.Heartbeat:Connect(function()
-	task.wait(AutoShoot.Values["Shoot duration"])
-	
-	if not autoShoot or Player.Character then return end
-	
-	if not AutoShoot.Values["Aim at Head"] and not AutoShoot.Values["Aim at Torso"] then return end
-	
-	if not AutoShoot.Values["Arrow"] and not AutoShoot.Values["Snowball"] then return end
-	
-	local character = Player.Character 
-	local HRP = Character:FindFirstChild("HumanoidRootPart")
-	
-	if inventoriesFolder then
-		local playerFolder = inventoriesFolder:FindFirstChild(Player.Name)
-		local Handinvitem = character:FindFirstChild("HandInvItem")
-		
-		if not playerFolder then return end
-		if not Handinvitem then return end
-		
-		local arrows = nil
-		local snowballs = nil
-		
-		if AutoShoot.Values["Arrow"] then
-			local arrows = playerFolder:FindFirstChild("arrow")
+local function findClosestPlr(radius, rootPart)
+	local closestCharacter = nil
+	local shortestDistance = radius 
+
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer ~= Player and targetPlayer.Team ~= Player.Team then
+			local character = targetPlayer.Character
+
+			if character then
+				local targetRoot = character:FindFirstChild("HumanoidRootPart")
+
+				if targetRoot then
+					local distance = (rootPart.Position - targetRoot.Position).Magnitude
+
+					if distance < shortestDistance then
+						closestCharacter = character
+						shortestDistance = distance
+					end
+				end
+			end
 		end
-		
-		if AutoShoot.Values["Snowball"] then
-			local snowballs = playerFolder:FindFirstChild("snowball")
+	end
+
+	if closestCharacter then
+		return closestCharacter, shortestDistance
+	else
+		return nil, nil
+	end
+end
+
+local Players = game:GetService("Players")
+
+local function findClosestNPC(radius, rootPart)
+	local closestNPC = nil
+	local shortestDistance = radius
+
+	for _, npc in ipairs(workspace:GetChildren()) do
+
+		if npc:IsA("Model") then
+			local humanoid = npc:FindFirstChild("Humanoid")
+			local targetRoot = npc.PrimaryPart or npc:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and humanoid.Health > 0 and targetRoot and not Players:GetPlayerFromCharacter(npc) then
+
+				local distance = (rootPart.Position - targetRoot.Position).Magnitude
+
+				if distance < shortestDistance then
+					closestNPC = npc
+					shortestDistance = distance
+				end
+			end
 		end
-		
-		if not arrows or snowballs then return end
-		
-		if Handinvitem.Value.Name == "snowball" then
-			
+	end
+
+	if closestNPC then
+		return closestNPC, shortestDistance
+	else
+		return nil, nil
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(AutoShoot.Values["Shoot duration"])
+
+		-- Use 'continue' to skip this cycle but keep the loop alive
+		if not autoShoot then continue end
+
+		if not AutoShoot.Values["Aim at Head"] and not AutoShoot.Values["Aim at Torso"] then continue end
+
+		if #AutoShoot.Values["Projectiles"] == 0 then continue end
+
+		if not Player.Character then continue end
+
+		local character = Player.Character 
+		local HRP = character:FindFirstChild("HumanoidRootPart")
+
+		if inventoriesFolder then
+			local playerFolder = inventoriesFolder:FindFirstChild(Player.Name)
+			local Handinvitem = character:FindFirstChild("HandInvItem")
+
+			if not playerFolder then continue end
+			if not Handinvitem then continue end
+
+			if Handinvitem.Value == nil then continue end
+
+			local item = playerFolder:FindFirstChild(Handinvitem.Value.Name)
+			if not item then continue end
+
+			local plrTarget, plrDistance = nil
+			local npcTarget, npcDistance = nil
+			local bestTarget = nil
+
+			if AutoShoot.Values["Target Players"] == true then
+				plrTarget, plrDistance = findClosestPlr(AutoShoot.Values["Range"], HRP)
+			end
+
+			if AutoShoot.Values["Target NPCs/Dummies"] == true then
+				npcTarget, npcDistance = findClosestNPC(AutoShoot.Values["Range"], HRP)
+			end
+
+			if plrTarget and npcTarget then
+				if plrDistance >= npcDistance then
+					bestTarget = plrTarget
+				else
+					bestTarget = npcTarget
+				end
+			end
+
+			if plrTarget and not npcTarget then
+				bestTarget = plrTarget
+			elseif npcTarget and not plrTarget then
+				bestTarget = npcTarget
+			elseif not npcTarget and not plrTarget then
+				continue -- Fixed here
+			end
+
+			-- --- PROJECTILE LOGIC ---
+			local handItemName = tostring(Handinvitem.Value.Name)
+			local projectileName = nil
+			local itemRequired = nil
+
+			-- 1. Check if holding a bow
+			if table.find(bows, handItemName) then
+				-- Only if holding a bow, look for an arrow in the folder
+				if playerFolder:FindFirstChild("arrow") then
+					projectileName = "arrow"
+
+					itemRequired = handItemName
+				end
+
+				-- 2. Check if holding other projectiles (Snowball, etc.)
+				-- This only runs if they are NOT holding a bow
+			elseif table.find(AutoShoot.Values["Projectiles"], handItemName) then
+				projectileName = handItemName
+			end
+
+			-- If projectileName is still nil, it means:
+			-- A) Holding a bow but no arrow in inventory
+			-- B) Holding an arrow (but not a bow)
+			-- C) Holding an item that isn't a projectile
+			if projectileName == nil then
+				continue
+			end
+			-- -----------------------------
+
+			print(projectileName)
+
+			fireProjectile(projectileName, HRP, bestTarget.HumanoidRootPart, handItemName,  bestTarget)
+
 		end
-		
-		  
 	end
 end)
 
+--WHITE HITS BUTTON
 
 WhiteHits.Callbacks.OnToggle = function(state)
 	whiteHits = state
@@ -1668,3 +1870,5 @@ RunService.Heartbeat:Connect(function()
 		end
 	end
 end)
+
+--WHITE HITS BUTTON
